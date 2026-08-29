@@ -38,7 +38,7 @@ export class VideoGenerationService {
   }
 
   /**
-   * Generates a single scene using the active provider
+   * Generates a single scene frame using Gemini AI backend
    */
   public async generateScene(
     scene: Scene,
@@ -46,15 +46,40 @@ export class VideoGenerationService {
     masterCharacter: CharacterBible | null,
     aspectRatio: AspectRatio = '16:9'
   ): Promise<SceneGenerationResult> {
-    try {
-      const provider = this.getProvider();
-      return await provider.generateScene(scene, visualBible, masterCharacter, aspectRatio);
-    } catch (err: unknown) {
-      // If real provider fails (e.g. key missing), graceful fallback to demo provider with a notice
-      console.warn('Primary video provider error, falling back to Demo Simulation Provider', err);
-      const fallback = new DemoVideoProviderAdapter();
-      return await fallback.generateScene(scene, visualBible, masterCharacter, aspectRatio);
+    const response = await fetch('/api/generation/scene', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scene,
+        visualBible,
+        masterCharacter,
+        aspectRatio,
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      const message = errData.error || errData.details || `Falha na requisição (HTTP ${response.status})`;
+      throw new Error(message);
     }
+
+    const data = await response.json();
+    if (!data.assetUrl || typeof data.assetUrl !== 'string') {
+      throw new Error('Nenhuma imagem válida foi retornada pela API Gemini.');
+    }
+
+    return {
+      assetUrl: data.assetUrl,
+      thumbnailUrl: data.thumbnailUrl || data.assetUrl,
+      assetType: data.assetType || 'image',
+      provider: data.provider || 'Gemini AI Vision',
+      isDemo: false,
+      metadata: {
+        camera: scene.cameraMovement,
+        motionStrength: scene.motionStrength || 5,
+        generatedAt: Date.now(),
+      },
+    };
   }
 
   /**

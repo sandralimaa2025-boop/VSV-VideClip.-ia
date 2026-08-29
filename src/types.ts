@@ -145,6 +145,7 @@ export interface Scene {
   thumbnailUrl?: string;
   assetType?: 'video' | 'image' | 'image_motion' | 'demo_canvas';
   status: SceneStatus;
+  errorMessage?: string;
   motionStrength?: number; // 1 - 10
   textOverlay?: string;
   regenerationHistory?: {

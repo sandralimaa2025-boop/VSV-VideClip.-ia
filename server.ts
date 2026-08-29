@@ -328,10 +328,17 @@ Retorne um JSON com a cena atualizada preservando id, startTime, endTime, durati
       const { scene, visualBible, masterCharacter, aspectRatio = '16:9' } = req.body;
       const ai = getGeminiClient();
 
-      if (ai && scene) {
-        // Attempt AI generation with Gemini Image model if available
-        try {
-          const prompt = `Cinematic music video frame for a high production music video.
+      if (!ai) {
+        return res.status(500).json({
+          error: 'Chave GEMINI_API_KEY não configurada no servidor.',
+        });
+      }
+
+      if (!scene) {
+        return res.status(400).json({ error: 'Dados da cena não fornecidos.' });
+      }
+
+      const prompt = `Cinematic music video frame for a high production music video.
 Scene Description: ${scene.visualPrompt || scene.description || scene.characterAction}
 Setting: ${scene.setting || visualBible?.setting || 'Cinematic stage'}
 Camera Movement & Angle: ${scene.cameraMovement || 'Cinematic 35mm lens'}
@@ -339,10 +346,47 @@ Lighting: ${scene.lighting || visualBible?.lighting || 'Dramatic cinematic light
 Visual Style: ${visualBible?.style || 'Cinematic film, anamorphic lens flare, 8k masterpiece'}
 Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmospheric'}`;
 
-          const formattedRatio = aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : aspectRatio === '4:5' ? '3:4' : '16:9';
+      const formattedRatio = aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : aspectRatio === '4:5' ? '3:4' : '16:9';
 
+      let lastError: string | null = null;
+      let assetUrl: string | null = null;
+      let usedModel = 'gemini-3.1-flash-lite-image';
+
+      // 1. Try gemini-3.1-flash-lite-image
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-lite-image',
+          contents: {
+            parts: [{ text: prompt }],
+          },
+          config: {
+            imageConfig: {
+              aspectRatio: formattedRatio as any,
+            },
+          },
+        });
+
+        const candidates = response.candidates || [];
+        for (const candidate of candidates) {
+          const parts = candidate.content?.parts || [];
+          for (const part of parts) {
+            if (part.inlineData && part.inlineData.data) {
+              const mimeType = part.inlineData.mimeType || 'image/png';
+              assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+              usedModel = 'gemini-3.1-flash-lite-image';
+              break;
+            }
+          }
+          if (assetUrl) break;
+        }
+      } catch (err1: any) {
+        lastError = err1?.message || String(err1);
+        console.warn('Tentativa com gemini-3.1-flash-lite-image falhou:', lastError);
+
+        // 2. Try gemini-3.1-flash-image
+        try {
           const response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite-image',
+            model: 'gemini-3.1-flash-image',
             contents: {
               parts: [{ text: prompt }],
             },
@@ -359,47 +403,60 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
             for (const part of parts) {
               if (part.inlineData && part.inlineData.data) {
                 const mimeType = part.inlineData.mimeType || 'image/png';
-                const assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
-                return res.json({
-                  assetUrl,
-                  thumbnailUrl: assetUrl,
-                  assetType: 'image',
-                  provider: 'Gemini AI Vision',
-                  isDemo: false,
-                });
+                assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+                usedModel = 'gemini-3.1-flash-image';
+                break;
               }
             }
+            if (assetUrl) break;
           }
-        } catch (genErr) {
-          console.warn('Gemini image model not available or quota reached, serving cinematic curated frame');
+        } catch (err2: any) {
+          lastError = err2?.message || String(err2);
+          console.warn('Tentativa com gemini-3.1-flash-image falhou:', lastError);
+
+          // 3. Try imagen-3.0-generate-002
+          try {
+            const imgRes = await ai.models.generateImages({
+              model: 'imagen-3.0-generate-002',
+              prompt,
+              config: {
+                numberOfImages: 1,
+                aspectRatio: formattedRatio as any,
+                outputMimeType: 'image/jpeg',
+              },
+            });
+
+            if (imgRes.generatedImages && imgRes.generatedImages.length > 0) {
+              const b64 = imgRes.generatedImages[0].image.imageBytes;
+              assetUrl = `data:image/jpeg;base64,${b64}`;
+              usedModel = 'imagen-3.0-generate-002';
+            }
+          } catch (err3: any) {
+            lastError = err3?.message || String(err3);
+            console.error('Falha em todos os modelos de imagem Gemini:', lastError);
+          }
         }
       }
 
-      // Curated High-Definition Cinematic Music Video Stills
-      const curatedLibrary = [
-        'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=1600&auto=format&fit=crop&q=80',
-      ];
+      if (assetUrl) {
+        return res.json({
+          assetUrl,
+          thumbnailUrl: assetUrl,
+          assetType: 'image',
+          provider: `Gemini AI Vision (${usedModel})`,
+          isDemo: false,
+        });
+      }
 
-      const sceneIndex = (scene?.order ? scene.order - 1 : 0) % curatedLibrary.length;
-      const fallbackUrl = curatedLibrary[sceneIndex];
-
-      return res.json({
-        assetUrl: fallbackUrl,
-        thumbnailUrl: fallbackUrl,
-        assetType: 'image',
-        provider: 'CLIPE AI Cinematics',
-        isDemo: true,
+      // No fallback to Unsplash or simulated images: return explicit error
+      return res.status(502).json({
+        error: `Erro ao gerar imagem com Gemini: ${lastError || 'Nenhuma imagem foi retornada pelo modelo.'}`,
+        details: lastError,
       });
     } catch (err: unknown) {
       console.error('Error in /api/generation/scene:', err);
-      res.status(500).json({ error: 'Erro ao gerar cena visual' });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Erro interno no servidor ao gerar cena: ${errMsg}` });
     }
   });
 

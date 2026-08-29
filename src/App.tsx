@@ -257,16 +257,27 @@ export function App() {
         currentProject.aspectRatio
       );
 
+      if (result.assetUrl) {
+        updatedScenes[index] = {
+          ...scene,
+          status: 'ready',
+          generatedAssetUrl: result.assetUrl,
+          thumbnailUrl: result.thumbnailUrl || result.assetUrl,
+          assetType: result.assetType || 'image',
+          errorMessage: undefined,
+        };
+      } else {
+        throw new Error('Nenhum asset visual foi retornado.');
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
+      console.error(`Failed to generate scene ${index + 1}:`, errorMsg);
       updatedScenes[index] = {
         ...scene,
-        status: 'ready',
-        generatedAssetUrl: result.assetUrl,
-        thumbnailUrl: result.thumbnailUrl,
-        assetType: result.assetType,
+        status: 'error',
+        errorMessage: errorMsg,
+        generatedAssetUrl: undefined,
       };
-    } catch (err) {
-      console.error(`Failed to generate scene ${index + 1}`, err);
-      updatedScenes[index] = { ...scene, status: 'error' };
     }
 
     const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
@@ -293,7 +304,7 @@ export function App() {
 
       setCurrentGeneratingSceneIndex(i);
       const scene = updatedScenes[i];
-      updatedScenes[i] = { ...scene, status: 'generating' };
+      updatedScenes[i] = { ...scene, status: 'generating', errorMessage: undefined };
       handleUpdateProject({ scenes: [...updatedScenes] });
 
       try {
@@ -304,16 +315,27 @@ export function App() {
           currentProject.aspectRatio
         );
 
+        if (result.assetUrl) {
+          updatedScenes[i] = {
+            ...scene,
+            status: 'ready',
+            generatedAssetUrl: result.assetUrl,
+            thumbnailUrl: result.thumbnailUrl || result.assetUrl,
+            assetType: result.assetType || 'image',
+            errorMessage: undefined,
+          };
+        } else {
+          throw new Error('Nenhum asset visual retornado.');
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
+        console.error(`Failed to generate scene ${i + 1}:`, errorMsg);
         updatedScenes[i] = {
           ...scene,
-          status: 'ready',
-          generatedAssetUrl: result.assetUrl,
-          thumbnailUrl: result.thumbnailUrl,
-          assetType: result.assetType,
+          status: 'error',
+          errorMessage: errorMsg,
+          generatedAssetUrl: undefined,
         };
-      } catch (err) {
-        console.error(`Failed to generate scene ${i + 1}`, err);
-        updatedScenes[i] = { ...scene, status: 'error' };
       }
 
       const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
@@ -341,7 +363,7 @@ export function App() {
       const scene = updatedScenes[i];
 
       // Update scene status to generating
-      updatedScenes[i] = { ...scene, status: 'generating' };
+      updatedScenes[i] = { ...scene, status: 'generating', errorMessage: undefined };
       handleUpdateProject({ scenes: [...updatedScenes] });
 
       try {
@@ -352,16 +374,27 @@ export function App() {
           currentProject.aspectRatio
         );
 
+        if (result.assetUrl) {
+          updatedScenes[i] = {
+            ...scene,
+            status: 'ready',
+            generatedAssetUrl: result.assetUrl,
+            thumbnailUrl: result.thumbnailUrl || result.assetUrl,
+            assetType: result.assetType || 'image',
+            errorMessage: undefined,
+          };
+        } else {
+          throw new Error('Nenhum asset retornado pela geração.');
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
+        console.error(`Failed to generate scene ${i + 1}:`, errorMsg);
         updatedScenes[i] = {
           ...scene,
-          status: 'ready',
-          generatedAssetUrl: result.assetUrl,
-          thumbnailUrl: result.thumbnailUrl,
-          assetType: result.assetType,
+          status: 'error',
+          errorMessage: errorMsg,
+          generatedAssetUrl: undefined,
         };
-      } catch (err) {
-        console.error(`Failed to generate scene ${i + 1}`, err);
-        updatedScenes[i] = { ...scene, status: 'error' };
       }
 
       const progress = ((i + 1) / updatedScenes.length) * 100;

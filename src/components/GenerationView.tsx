@@ -205,41 +205,33 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
                     src={scene.generatedAssetUrl}
                     alt={`Cena ${scene.order}`}
                     referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      // Fallback if image load fails
-                      e.currentTarget.src = scene.thumbnailUrl || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80';
-                    }}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
-                ) : isPending && scene.thumbnailUrl ? (
-                  <div className="relative w-full h-full">
-                    <img
-                      src={scene.thumbnailUrl}
-                      alt={`Cena ${scene.order}`}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover filter brightness-[0.35] blur-[0.5px]"
-                    />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                      <Clock className="w-5 h-5 text-violet-300 mb-1" />
-                      <span className="text-[11px] font-bold text-violet-200">Prévia do Storyboard</span>
-                      <span className="text-[10px] text-zinc-400">Aguardando geração final</span>
+                ) : scene.status === 'error' ? (
+                  <div className="p-4 text-center space-y-2 flex flex-col items-center justify-center h-full w-full bg-rose-950/40 border border-rose-800/40">
+                    <div className="w-8 h-8 rounded-full bg-rose-900/60 border border-rose-500/50 flex items-center justify-center text-rose-300">
+                      <AlertCircle className="w-5 h-5" />
                     </div>
+                    <span className="text-xs font-bold text-rose-300">
+                      Erro ao gerar Cena {scene.order}
+                    </span>
+                    {scene.errorMessage && (
+                      <p className="text-[10px] text-rose-200/80 line-clamp-3 max-w-xs break-words px-2 font-mono">
+                        {scene.errorMessage}
+                      </p>
+                    )}
+                  </div>
+                ) : isGenerating ? (
+                  <div className="p-6 text-center space-y-3">
+                    <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto" />
+                    <span className="text-xs text-violet-300 font-bold block">
+                      Gerando tomada cinematográfica com Gemini...
+                    </span>
                   </div>
                 ) : (
-                  <div className="p-6 text-center space-y-3">
-                    {isGenerating ? (
-                      <div className="space-y-2">
-                        <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto" />
-                        <span className="text-xs text-violet-300 font-bold block">
-                          Gerando tomada cinematográfica...
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <Clock className="w-6 h-6 text-zinc-600 mx-auto" />
-                        <span className="text-xs text-zinc-500 block">Aguardando geração</span>
-                      </div>
-                    )}
+                  <div className="p-6 text-center space-y-2">
+                    <Clock className="w-6 h-6 text-zinc-600 mx-auto" />
+                    <span className="text-xs text-zinc-400 font-medium block">Aguardando geração</span>
                   </div>
                 )}
 
@@ -258,6 +250,15 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
                     <span className="px-2 py-0.5 rounded-md bg-emerald-950/90 text-emerald-400 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
                       <CheckCircle className="w-3 h-3" />
                       Pronta
+                    </span>
+                  </div>
+                )}
+
+                {scene.status === 'error' && (
+                  <div className="absolute bottom-2.5 right-2.5">
+                    <span className="px-2 py-0.5 rounded-md bg-rose-950/90 text-rose-300 border border-rose-500/40 text-[10px] font-bold flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 text-rose-400" />
+                      Erro
                     </span>
                   </div>
                 )}

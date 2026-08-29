@@ -446,8 +446,10 @@ export class RealVideoProviderAdapter implements IVideoProviderAdapter {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        errorData.message ||
-          'A API de vídeo externa requer chave de configuração. Ative o Modo Demonstração ou configure as chaves no arquivo .env'
+        errorData.error ||
+          errorData.message ||
+          errorData.details ||
+          `Erro HTTP ${response.status} ao gerar a cena.`
       );
     }
 
