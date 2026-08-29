@@ -50,6 +50,13 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
   const readyScenesCount = scenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
   const allReady = readyScenesCount === scenes.length && scenes.length > 0;
 
+  // Auto-start batch generation when landing on this view if scenes are not yet generated
+  React.useEffect(() => {
+    if (scenes.length > 0 && readyScenesCount === 0 && !isGeneratingAll) {
+      onStartBatchGeneration();
+    }
+  }, [scenes.length, readyScenesCount, isGeneratingAll, onStartBatchGeneration]);
+
   const regenPresets = [
     'Mais cinematográfica',
     'Mais dramática',

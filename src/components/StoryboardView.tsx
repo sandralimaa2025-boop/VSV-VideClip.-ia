@@ -49,6 +49,12 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 }) => {
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(scenes[0]?.id || null);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
+
+  const handleApprove = () => {
+    setIsApproving(true);
+    onApproveStoryboard();
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedSceneId((prev) => (prev === id ? null : id));
@@ -73,7 +79,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {visualBible && (
             <button
               onClick={onOpenVisualBible}
@@ -90,6 +96,17 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
           >
             <Plus className="w-3.5 h-3.5 text-cyan-400" />
             <span>Adicionar Cena</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleApprove}
+            disabled={isApproving || scenes.length === 0}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-xs font-black text-white flex items-center gap-1.5 shadow-lg shadow-violet-950/60 transition-all disabled:opacity-50"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>{isApproving ? 'Iniciando...' : 'Aprovar & Gerar'}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -295,11 +312,12 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 
         <button
           type="button"
-          onClick={onApproveStoryboard}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-sm font-black font-heading text-white flex items-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+          onClick={handleApprove}
+          disabled={isApproving || scenes.length === 0}
+          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-sm font-black font-heading text-white flex items-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0 disabled:opacity-50"
         >
           <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>APROVAR STORYBOARD & GERAR CENAS</span>
+          <span>{isApproving ? 'APROVANDO & GERANDO CENAS...' : 'APROVAR STORYBOARD & GERAR CENAS'}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -209,21 +209,34 @@ export function App() {
   };
 
   // 4. Approve Storyboard -> Generation View
-  const handleApproveStoryboard = () => {
+  const handleApproveStoryboard = async () => {
+    const scenesToProcess = currentProject.scenes && currentProject.scenes.length > 0
+      ? currentProject.scenes
+      : [];
+
     handleUpdateProject({
       status: 'GERANDO',
     });
+
+    // Automatically trigger scene generation immediately upon approval
+    if (scenesToProcess.length > 0) {
+      setTimeout(() => {
+        handleStartBatchGeneration(scenesToProcess);
+      }, 50);
+    }
   };
 
   // 5. Batch Scene Generation
-  const handleStartBatchGeneration = async () => {
+  const handleStartBatchGeneration = async (scenesOverride?: Scene[]) => {
+    if (isGeneratingAll) return;
     setIsGeneratingAll(true);
     setGeneratingProgress(0);
 
     const videoService = VideoGenerationService.getInstance();
     videoService.setProviderMode(demoMode ? 'demo' : 'real');
 
-    const updatedScenes = [...currentProject.scenes];
+    const sourceScenes = scenesOverride || currentProject.scenes;
+    const updatedScenes = [...sourceScenes];
 
     for (let i = 0; i < updatedScenes.length; i++) {
       setCurrentGeneratingSceneIndex(i);
