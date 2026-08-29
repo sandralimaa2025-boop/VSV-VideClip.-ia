@@ -209,7 +209,7 @@ export function App() {
   };
 
   // 4. Approve Storyboard -> Generation View
-  const handleApproveStoryboard = async () => {
+  const handleApproveStoryboard = async (mode: 'all' | 'first_only' = 'all') => {
     const scenesToProcess = currentProject.scenes && currentProject.scenes.length > 0
       ? currentProject.scenes
       : [];
@@ -218,12 +218,110 @@ export function App() {
       status: 'GERANDO',
     });
 
-    // Automatically trigger scene generation immediately upon approval
     if (scenesToProcess.length > 0) {
       setTimeout(() => {
-        handleStartBatchGeneration(scenesToProcess);
+        if (mode === 'first_only') {
+          handleGenerateSingleSceneIndex(0, scenesToProcess);
+        } else {
+          handleStartBatchGeneration(scenesToProcess);
+        }
       }, 50);
     }
+  };
+
+  // 4.1 Generate Single Scene by Index
+  const handleGenerateSingleSceneIndex = async (index: number, scenesOverride?: Scene[]) => {
+    if (isGeneratingAll) return;
+    setIsGeneratingAll(true);
+    setCurrentGeneratingSceneIndex(index);
+
+    const videoService = VideoGenerationService.getInstance();
+    videoService.setProviderMode(demoMode ? 'demo' : 'real');
+
+    const sourceScenes = scenesOverride || currentProject.scenes;
+    const updatedScenes = [...sourceScenes];
+    const scene = updatedScenes[index];
+    if (!scene) {
+      setIsGeneratingAll(false);
+      return;
+    }
+
+    updatedScenes[index] = { ...scene, status: 'generating' };
+    handleUpdateProject({ scenes: [...updatedScenes] });
+
+    try {
+      const result = await videoService.generateScene(
+        scene,
+        currentProject.visualBible,
+        currentProject.masterCharacter,
+        currentProject.aspectRatio
+      );
+
+      updatedScenes[index] = {
+        ...scene,
+        status: 'ready',
+        generatedAssetUrl: result.assetUrl,
+        thumbnailUrl: result.thumbnailUrl,
+        assetType: result.assetType,
+      };
+    } catch (err) {
+      console.error(`Failed to generate scene ${index + 1}`, err);
+      updatedScenes[index] = { ...scene, status: 'error' };
+    }
+
+    const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
+    setGeneratingProgress((readyCount / updatedScenes.length) * 100);
+    handleUpdateProject({ scenes: [...updatedScenes] });
+    setIsGeneratingAll(false);
+  };
+
+  // 4.2 Generate Remaining Scenes (from current state)
+  const handleGenerateRemainingScenes = async () => {
+    if (isGeneratingAll) return;
+    setIsGeneratingAll(true);
+
+    const videoService = VideoGenerationService.getInstance();
+    videoService.setProviderMode(demoMode ? 'demo' : 'real');
+
+    const updatedScenes = [...currentProject.scenes];
+
+    for (let i = 0; i < updatedScenes.length; i++) {
+      // If already ready and has asset, skip
+      if (updatedScenes[i].status === 'ready' && updatedScenes[i].generatedAssetUrl) {
+        continue;
+      }
+
+      setCurrentGeneratingSceneIndex(i);
+      const scene = updatedScenes[i];
+      updatedScenes[i] = { ...scene, status: 'generating' };
+      handleUpdateProject({ scenes: [...updatedScenes] });
+
+      try {
+        const result = await videoService.generateScene(
+          scene,
+          currentProject.visualBible,
+          currentProject.masterCharacter,
+          currentProject.aspectRatio
+        );
+
+        updatedScenes[i] = {
+          ...scene,
+          status: 'ready',
+          generatedAssetUrl: result.assetUrl,
+          thumbnailUrl: result.thumbnailUrl,
+          assetType: result.assetType,
+        };
+      } catch (err) {
+        console.error(`Failed to generate scene ${i + 1}`, err);
+        updatedScenes[i] = { ...scene, status: 'error' };
+      }
+
+      const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
+      setGeneratingProgress((readyCount / updatedScenes.length) * 100);
+      handleUpdateProject({ scenes: [...updatedScenes] });
+    }
+
+    setIsGeneratingAll(false);
   };
 
   // 5. Batch Scene Generation
@@ -446,6 +544,8 @@ export function App() {
             generatingProgress={generatingProgress}
             currentGeneratingSceneIndex={currentGeneratingSceneIndex}
             onStartBatchGeneration={handleStartBatchGeneration}
+            onGenerateRemainingScenes={handleGenerateRemainingScenes}
+            onGenerateSingleSceneIndex={handleGenerateSingleSceneIndex}
             onRegenerateScene={handleRegenerateScene}
             onGoToEditor={() => handleUpdateProject({ status: 'EDITANDO' })}
             demoMode={demoMode}

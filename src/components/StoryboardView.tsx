@@ -31,7 +31,7 @@ interface StoryboardViewProps {
   onDeleteScene: (sceneId: string) => void;
   onAddScene: () => void;
   onOpenVisualBible: () => void;
-  onApproveStoryboard: () => void;
+  onApproveStoryboard: (mode: 'all' | 'first_only') => void;
   onRegenerateSingleScene: (scene: Scene) => void;
 }
 
@@ -49,11 +49,11 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 }) => {
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(scenes[0]?.id || null);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
-  const [isApproving, setIsApproving] = useState(false);
+  const [approvingMode, setApprovingMode] = useState<'all' | 'first_only' | null>(null);
 
-  const handleApprove = () => {
-    setIsApproving(true);
-    onApproveStoryboard();
+  const handleApprove = (mode: 'all' | 'first_only') => {
+    setApprovingMode(mode);
+    onApproveStoryboard(mode);
   };
 
   const toggleExpand = (id: string) => {
@@ -100,12 +100,12 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 
           <button
             type="button"
-            onClick={handleApprove}
-            disabled={isApproving || scenes.length === 0}
+            onClick={() => handleApprove('all')}
+            disabled={approvingMode !== null || scenes.length === 0}
             className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-xs font-black text-white flex items-center gap-1.5 shadow-lg shadow-violet-950/60 transition-all disabled:opacity-50"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>{isApproving ? 'Iniciando...' : 'Aprovar & Gerar'}</span>
+            <span>{approvingMode ? 'Iniciando...' : 'Aprovar & Gerar'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -300,26 +300,41 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
       </div>
 
       {/* Footer Approving Action */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-violet-950/60 via-indigo-950/40 to-cyan-950/30 border border-violet-500/40 flex flex-col sm:flex-row items-center justify-between gap-4 glow-purple">
-        <div>
-          <h4 className="font-heading font-black text-lg text-white">
-            Storyboard aprovado?
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-violet-950/60 via-indigo-950/40 to-cyan-950/30 border border-violet-500/40 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 glow-purple">
+        <div className="space-y-1">
+          <h4 className="font-heading font-black text-lg text-white flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-cyan-400" />
+            Storyboard Aprovado? Escolha como gerar:
           </h4>
-          <p className="text-xs text-zinc-300">
-            Avançar para a etapa de renderização e geração visual de todas as cenas.
+          <p className="text-xs text-zinc-300 max-w-xl">
+            Você pode gerar primeiro a <strong>Cena 1 de teste</strong> para avaliar o estilo visual com calma antes do restante, ou disparar a <strong>produção completa de todas as cenas</strong>.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleApprove}
-          disabled={isApproving || scenes.length === 0}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-sm font-black font-heading text-white flex items-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0 disabled:opacity-50"
-        >
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>{isApproving ? 'APROVANDO & GERANDO CENAS...' : 'APROVAR STORYBOARD & GERAR CENAS'}</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+          {/* Option 1: Generate only 1st scene */}
+          <button
+            type="button"
+            onClick={() => handleApprove('first_only')}
+            disabled={approvingMode !== null || scenes.length === 0}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-zinc-900/90 hover:bg-violet-950/80 border border-violet-500/40 hover:border-violet-400 text-xs font-bold text-violet-200 hover:text-white flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+          >
+            <Camera className="w-4 h-4 text-cyan-400" />
+            <span>{approvingMode === 'first_only' ? 'GERANDO CENA 1...' : 'GERAR APENAS CENA 1 (TESTE)'}</span>
+          </button>
+
+          {/* Option 2: Generate all scenes */}
+          <button
+            type="button"
+            onClick={() => handleApprove('all')}
+            disabled={approvingMode !== null || scenes.length === 0}
+            className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-xs font-black font-heading text-white flex items-center justify-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>{approvingMode === 'all' ? 'GERANDO TODAS...' : 'GERAR TODAS AS CENAS'}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

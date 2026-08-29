@@ -26,6 +26,8 @@ interface GenerationViewProps {
   generatingProgress: number;
   currentGeneratingSceneIndex: number;
   onStartBatchGeneration: () => void;
+  onGenerateRemainingScenes: () => void;
+  onGenerateSingleSceneIndex: (index: number) => void;
   onRegenerateScene: (scene: Scene, preset: string, customNotes?: string) => void;
   onGoToEditor: () => void;
   demoMode: boolean;
@@ -38,6 +40,8 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
   generatingProgress,
   currentGeneratingSceneIndex,
   onStartBatchGeneration,
+  onGenerateRemainingScenes,
+  onGenerateSingleSceneIndex,
   onRegenerateScene,
   onGoToEditor,
   demoMode,
@@ -48,14 +52,8 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
   const [isSubmittingRegen, setIsSubmittingRegen] = useState(false);
 
   const readyScenesCount = scenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
+  const pendingScenesCount = scenes.length - readyScenesCount;
   const allReady = readyScenesCount === scenes.length && scenes.length > 0;
-
-  // Auto-start batch generation when landing on this view if scenes are not yet generated
-  React.useEffect(() => {
-    if (scenes.length > 0 && readyScenesCount === 0 && !isGeneratingAll) {
-      onStartBatchGeneration();
-    }
-  }, [scenes.length, readyScenesCount, isGeneratingAll, onStartBatchGeneration]);
 
   const regenPresets = [
     'Mais cinematográfica',
@@ -95,9 +93,20 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
           </p>
         </div>
 
-        {/* Action Button */}
-        <div>
-          {!allReady ? (
+        {/* Action Buttons Header */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {pendingScenesCount > 0 && readyScenesCount > 0 && !allReady && (
+            <button
+              onClick={onGenerateRemainingScenes}
+              disabled={isGeneratingAll}
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-cyan-950/50 transition-all disabled:opacity-50"
+            >
+              <Sparkles className={`w-4 h-4 text-amber-300 ${isGeneratingAll ? 'animate-spin' : ''}`} />
+              <span>{isGeneratingAll ? 'Processando...' : `Gerar Cenas Restantes (${pendingScenesCount})`}</span>
+            </button>
+          )}
+
+          {!allReady && readyScenesCount === 0 && (
             <button
               onClick={onStartBatchGeneration}
               disabled={isGeneratingAll}
@@ -106,7 +115,9 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${isGeneratingAll ? 'animate-spin' : ''}`} />
               <span>{isGeneratingAll ? 'Gerando Cenas...' : 'Gerar Todas as Cenas'}</span>
             </button>
-          ) : (
+          )}
+
+          {allReady && (
             <button
               onClick={onGoToEditor}
               className="px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-violet-950/50 transition-all hover:scale-105"
@@ -117,6 +128,29 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Awaiting command banner when only scene 1 is generated */}
+      {readyScenesCount > 0 && !allReady && !isGeneratingAll && (
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-cyan-950/40 to-violet-950/40 border border-cyan-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glow-cyan">
+          <div className="space-y-1">
+            <h4 className="font-heading font-black text-sm text-cyan-300 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+              Cena de Teste Concluída! Aguardando seu comando para gerar o restante
+            </h4>
+            <p className="text-xs text-zinc-300">
+              Você pode avaliar o estilo visual na Cena 1 abaixo. Quando estiver satisfeito, clique no botão para gerar as outras {pendingScenesCount} cenas ou gere individualmente cada uma.
+            </p>
+          </div>
+          <button
+            onClick={onGenerateRemainingScenes}
+            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-xs font-black text-white flex items-center gap-2 shadow-lg shadow-cyan-950/70 transition-all hover:scale-105 shrink-0"
+          >
+            <Sparkles className="w-4 h-4 text-amber-200" />
+            <span>GERAR O RESTANTE ({pendingScenesCount} CENAS)</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Mode Notice */}
       {demoMode && (
@@ -154,7 +188,7 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
 
       {/* Scene Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {scenes.map((scene) => {
+        {scenes.map((scene, index) => {
           const isReady = scene.status === 'ready' && scene.generatedAssetUrl;
           const isPending = scene.status === 'pending';
           const isGenerating = scene.status === 'generating';
@@ -227,13 +261,37 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
 
                 {/* Scene Actions */}
                 <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => setSelectedSceneForRegen(scene)}
-                    className="flex-1 py-1.5 rounded-lg bg-zinc-900/80 hover:bg-violet-950/60 border border-zinc-800 hover:border-violet-700/40 text-[11px] font-semibold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <Wand2 className="w-3 h-3 text-cyan-400" />
-                    <span>Ajustar Direção</span>
-                  </button>
+                  {isPending && (
+                    <button
+                      onClick={() => onGenerateSingleSceneIndex(index)}
+                      disabled={isGeneratingAll}
+                      className="flex-1 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-300" />
+                      <span>Gerar Esta Cena</span>
+                    </button>
+                  )}
+
+                  {isReady && (
+                    <button
+                      onClick={() => setSelectedSceneForRegen(scene)}
+                      className="flex-1 py-1.5 rounded-lg bg-zinc-900/80 hover:bg-violet-950/60 border border-zinc-800 hover:border-violet-700/40 text-[11px] font-semibold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <Wand2 className="w-3 h-3 text-cyan-400" />
+                      <span>Ajustar Direção</span>
+                    </button>
+                  )}
+
+                  {scene.status === 'error' && (
+                    <button
+                      onClick={() => onGenerateSingleSceneIndex(index)}
+                      disabled={isGeneratingAll}
+                      className="flex-1 py-1.5 rounded-lg bg-rose-900/80 hover:bg-rose-800 border border-rose-600/50 text-[11px] font-semibold text-rose-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-3 h-3 text-rose-300" />
+                      <span>Tentar Novamente</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
