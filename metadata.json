@@ -1,0 +1,6 @@
+{
+  "name": "CLIPE AI — Diretor de Videoclipes com IA",
+  "description": "Transforme sua música em um videoclipe profissional com inteligência artificial, roteiro cinematográfico, storyboard e edição sincronizada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
