@@ -153,8 +153,23 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                 className="p-4 sm:p-5 flex items-center justify-between gap-4 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-violet-950/80 border border-violet-500/40 flex items-center justify-center text-sm font-black font-heading text-cyan-300 shrink-0">
-                    {scene.order.toString().padStart(2, '0')}
+                  {/* Scene Number & Visual Thumbnail */}
+                  <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-violet-950/80 border border-violet-500/40 shrink-0 shadow-md">
+                    {scene.thumbnailUrl || scene.generatedAssetUrl ? (
+                      <img
+                        src={scene.thumbnailUrl || scene.generatedAssetUrl}
+                        alt={`Cena ${scene.order}`}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs font-black font-heading text-cyan-300">
+                        {scene.order.toString().padStart(2, '0')}
+                      </div>
+                    )}
+                    <div className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-black/80 text-[9px] font-black text-cyan-300">
+                      {scene.order.toString().padStart(2, '0')}
+                    </div>
                   </div>
 
                   <div className="min-w-0 space-y-1">

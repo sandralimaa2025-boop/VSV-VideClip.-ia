@@ -77,6 +77,17 @@ export class LLMProviderAdapter {
     visualBible: VisualBible,
     analysis: MusicalAnalysis
   ): Promise<Scene[]> {
+    const curatedLibrary = [
+      'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=1600&auto=format&fit=crop&q=80',
+    ];
+
     try {
       const response = await fetch('/api/director/storyboard', {
         method: 'POST',
@@ -87,14 +98,22 @@ export class LLMProviderAdapter {
       if (response.ok) {
         const data = await response.json();
         if (data.scenes && Array.isArray(data.scenes)) {
-          return data.scenes;
+          return data.scenes.map((sc: Scene, i: number) => ({
+            ...sc,
+            thumbnailUrl: sc.thumbnailUrl || curatedLibrary[i % curatedLibrary.length],
+            status: sc.status || 'pending',
+          }));
         }
       }
     } catch (err) {
       console.warn('Backend Gemini storyboard fallback', err);
     }
 
-    return LLMProviderAdapter.fallbackStoryboard(project, concept, visualBible, analysis);
+    const fallbackScenes = LLMProviderAdapter.fallbackStoryboard(project, concept, visualBible, analysis);
+    return fallbackScenes.map((sc, i) => ({
+      ...sc,
+      thumbnailUrl: curatedLibrary[i % curatedLibrary.length],
+    }));
   }
 
   /**

@@ -74,13 +74,13 @@ export class DemoVideoProviderAdapter implements IVideoProviderAdapter {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.assetUrl && data.assetUrl.startsWith('data:image')) {
+        if (data.assetUrl && (data.assetUrl.startsWith('data:image') || data.assetUrl.startsWith('http') || data.assetUrl.startsWith('https'))) {
           return {
             assetUrl: data.assetUrl,
-            thumbnailUrl: data.assetUrl,
-            assetType: 'image',
+            thumbnailUrl: data.thumbnailUrl || data.assetUrl,
+            assetType: data.assetType || 'image',
             provider: data.provider || 'Gemini AI Vision',
-            isDemo: false,
+            isDemo: !!data.isDemo,
             metadata: {
               camera: scene.cameraMovement,
               motionStrength: scene.motionStrength || 5,

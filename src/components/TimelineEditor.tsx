@@ -211,11 +211,14 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
             }`}
           >
             {/* Active Scene Asset */}
-            {currentPlayingScene?.generatedAssetUrl ? (
+            {currentPlayingScene?.generatedAssetUrl || currentPlayingScene?.thumbnailUrl ? (
               <img
-                src={currentPlayingScene.generatedAssetUrl}
+                src={currentPlayingScene.generatedAssetUrl || currentPlayingScene.thumbnailUrl}
                 alt={`Cena ${currentPlayingScene.order}`}
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.src = 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80';
+                }}
                 className="w-full h-full object-cover select-none"
               />
             ) : (
@@ -503,14 +506,22 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     }`}
                     style={{ width: `${widthPct}%` }}
                   >
-                    <div className="flex items-center justify-between text-[10px] font-bold">
-                      <span className="text-white truncate">
+                    {(scene.thumbnailUrl || scene.generatedAssetUrl) && (
+                      <img
+                        src={scene.thumbnailUrl || scene.generatedAssetUrl}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
+                      />
+                    )}
+                    <div className="relative z-10 flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-white truncate drop-shadow">
                         C{scene.order.toString().padStart(2, '0')}
                       </span>
-                      <span className="text-[9px] font-mono text-zinc-400">{scene.duration}s</span>
+                      <span className="text-[9px] font-mono text-zinc-300 drop-shadow">{scene.duration}s</span>
                     </div>
 
-                    <span className="text-[9px] text-violet-300 truncate block">
+                    <span className="relative z-10 text-[9px] text-violet-200 truncate block drop-shadow">
                       {scene.musicSection}
                     </span>
                   </div>

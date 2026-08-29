@@ -205,8 +205,26 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
                     src={scene.generatedAssetUrl}
                     alt={`Cena ${scene.order}`}
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      // Fallback if image load fails
+                      e.currentTarget.src = scene.thumbnailUrl || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80';
+                    }}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
+                ) : isPending && scene.thumbnailUrl ? (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={scene.thumbnailUrl}
+                      alt={`Cena ${scene.order}`}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover filter brightness-[0.35] blur-[0.5px]"
+                    />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                      <Clock className="w-5 h-5 text-violet-300 mb-1" />
+                      <span className="text-[11px] font-bold text-violet-200">Prévia do Storyboard</span>
+                      <span className="text-[10px] text-zinc-400">Aguardando geração final</span>
+                    </div>
+                  </div>
                 ) : (
                   <div className="p-6 text-center space-y-3">
                     {isGenerating ? (
