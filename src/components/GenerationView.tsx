@@ -170,6 +170,7 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
                   <img
                     src={scene.generatedAssetUrl}
                     alt={`Cena ${scene.order}`}
+                    referrerPolicy="no-referrer"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 ) : (

@@ -143,7 +143,7 @@ export interface Scene {
   filter: SceneFilter;
   generatedAssetUrl?: string;
   thumbnailUrl?: string;
-  assetType?: 'video' | 'image_motion' | 'demo_canvas';
+  assetType?: 'video' | 'image' | 'image_motion' | 'demo_canvas';
   status: SceneStatus;
   motionStrength?: number; // 1 - 10
   textOverlay?: string;

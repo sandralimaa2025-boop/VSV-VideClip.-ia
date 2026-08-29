@@ -215,6 +215,7 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
               <img
                 src={currentPlayingScene.generatedAssetUrl}
                 alt={`Cena ${currentPlayingScene.order}`}
+                referrerPolicy="no-referrer"
                 className="w-full h-full object-cover select-none"
               />
             ) : (
