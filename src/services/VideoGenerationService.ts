@@ -57,13 +57,22 @@ export class VideoGenerationService {
       }),
     });
 
+    const contentType = response.headers.get('content-type') || '';
+    let responseData: any = {};
+
+    if (contentType.includes('application/json')) {
+      responseData = await response.json().catch(() => ({}));
+    } else {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Resposta inesperada do servidor (HTTP ${response.status}): ${text.slice(0, 150) || 'Não-JSON'}`);
+    }
+
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      const message = errData.error || errData.details || `Falha na requisição (HTTP ${response.status})`;
+      const message = responseData.error || responseData.details || `Falha na requisição (HTTP ${response.status})`;
       throw new Error(message);
     }
 
-    const data = await response.json();
+    const data = responseData;
     if (!data.assetUrl || typeof data.assetUrl !== 'string') {
       throw new Error('Nenhuma imagem válida foi retornada pela API Gemini.');
     }

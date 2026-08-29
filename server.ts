@@ -439,25 +439,44 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
       }
 
       if (assetUrl) {
-        return res.json({
+        return res.status(200).json({
           assetUrl,
           thumbnailUrl: assetUrl,
           assetType: 'image',
           provider: `Gemini AI Vision (${usedModel})`,
           isDemo: false,
+          modelUsed: usedModel,
         });
       }
 
-      // No fallback to Unsplash or simulated images: return explicit error
+      // No fallback to Unsplash or simulated images: return explicit JSON error
+      let userFriendlyError = lastError || 'Nenhuma imagem foi retornada pelo modelo.';
+      try {
+        if (lastError && (lastError.startsWith('{') || lastError.includes('"message"'))) {
+          const parsed = JSON.parse(lastError.slice(lastError.indexOf('{')));
+          if (parsed.error?.message) {
+            userFriendlyError = parsed.error.message;
+          }
+        }
+      } catch {
+        // Keep raw text
+      }
+
       return res.status(502).json({
-        error: `Erro ao gerar imagem com Gemini: ${lastError || 'Nenhuma imagem foi retornada pelo modelo.'}`,
+        error: `Erro ao gerar imagem com Gemini: ${userFriendlyError}`,
         details: lastError,
+        modelAttempted: usedModel,
       });
     } catch (err: unknown) {
       console.error('Error in /api/generation/scene:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: `Erro interno no servidor ao gerar cena: ${errMsg}` });
     }
+  });
+
+  // Catch-all 404 for API routes so they NEVER fall through to HTML SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `Rota de API não encontrada: ${req.method} ${req.originalUrl}` });
   });
 
   // Vite Middleware (Dev vs Prod)

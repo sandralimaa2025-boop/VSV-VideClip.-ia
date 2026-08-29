@@ -443,17 +443,26 @@ export class RealVideoProviderAdapter implements IVideoProviderAdapter {
       }),
     });
 
+    const contentType = response.headers.get('content-type') || '';
+    let responseData: any = {};
+
+    if (contentType.includes('application/json')) {
+      responseData = await response.json().catch(() => ({}));
+    } else {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Resposta inesperada do servidor (HTTP ${response.status}): ${text.slice(0, 150) || 'Não-JSON'}`);
+    }
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        errorData.error ||
-          errorData.message ||
-          errorData.details ||
+        responseData.error ||
+          responseData.message ||
+          responseData.details ||
           `Erro HTTP ${response.status} ao gerar a cena.`
       );
     }
 
-    const data = await response.json();
+    const data = responseData;
     return {
       assetUrl: data.assetUrl,
       thumbnailUrl: data.thumbnailUrl || data.assetUrl,
