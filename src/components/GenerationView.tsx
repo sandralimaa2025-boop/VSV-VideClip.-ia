@@ -174,8 +174,7 @@ export const GenerationView: React.FC<GenerationViewProps> = ({
           <div className="flex items-center justify-between text-xs font-bold">
             <span className="text-cyan-300 flex items-center gap-2">
               <Sparkles className="w-4 h-4 animate-spin text-violet-400" />
-              Renderizando Cena {(currentGeneratingSceneIndex + 1).toString().padStart(2, '0')} de{' '}
-              {scenes.length}...
+              <span>⚡ Renderizando em Paralelo com Gemini IA (Modo Turbo 3x mais rápido)...</span>
             </span>
             <span className="font-mono text-violet-300">{Math.round(generatingProgress)}%</span>
           </div>

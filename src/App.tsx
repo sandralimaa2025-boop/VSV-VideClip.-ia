@@ -306,7 +306,7 @@ export function App() {
     setIsGeneratingAll(false);
   };
 
-  // 4.2 Generate Remaining Scenes (from current state)
+  // 4.2 Generate Remaining Scenes (from current state in parallel)
   const handleGenerateRemainingScenes = async () => {
     if (isGeneratingAll) return;
     setIsGeneratingAll(true);
@@ -315,58 +315,74 @@ export function App() {
     videoService.setProviderMode(demoMode ? 'demo' : 'real');
 
     const updatedScenes = [...currentProject.scenes];
+    const pendingIndices = updatedScenes
+      .map((s, idx) => ({ s, idx }))
+      .filter(({ s }) => s.status !== 'ready' || !s.generatedAssetUrl)
+      .map(({ idx }) => idx);
 
-    for (let i = 0; i < updatedScenes.length; i++) {
-      // If already ready and has asset, skip
-      if (updatedScenes[i].status === 'ready' && updatedScenes[i].generatedAssetUrl) {
-        continue;
-      }
-
-      setCurrentGeneratingSceneIndex(i);
-      const scene = updatedScenes[i];
-      updatedScenes[i] = { ...scene, status: 'generating', errorMessage: undefined };
-      handleUpdateProject({ scenes: [...updatedScenes] });
-
-      try {
-        const result = await videoService.generateScene(
-          scene,
-          currentProject.visualBible,
-          currentProject.masterCharacter,
-          currentProject.aspectRatio
-        );
-
-        if (result.assetUrl) {
-          updatedScenes[i] = {
-            ...scene,
-            status: 'ready',
-            generatedAssetUrl: result.assetUrl,
-            thumbnailUrl: result.thumbnailUrl || result.assetUrl,
-            assetType: result.assetType || 'image',
-            errorMessage: undefined,
-          };
-        } else {
-          throw new Error('Nenhum asset visual retornado.');
-        }
-      } catch (err: any) {
-        const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
-        console.error(`Failed to generate scene ${i + 1}:`, errorMsg);
-        updatedScenes[i] = {
-          ...scene,
-          status: 'error',
-          errorMessage: errorMsg,
-          generatedAssetUrl: undefined,
-        };
-      }
-
-      const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
-      setGeneratingProgress((readyCount / updatedScenes.length) * 100);
-      handleUpdateProject({ scenes: [...updatedScenes] });
+    if (pendingIndices.length === 0) {
+      setIsGeneratingAll(false);
+      return;
     }
 
+    // Mark pending scenes as generating
+    pendingIndices.forEach((idx) => {
+      updatedScenes[idx] = { ...updatedScenes[idx], status: 'generating', errorMessage: undefined };
+    });
+    handleUpdateProject({ scenes: [...updatedScenes] });
+
+    // Concurrency limit of 3 parallel workers
+    const concurrency = Math.min(3, pendingIndices.length);
+    let queueIdx = 0;
+
+    const worker = async () => {
+      while (queueIdx < pendingIndices.length) {
+        const currentIndex = pendingIndices[queueIdx++];
+        setCurrentGeneratingSceneIndex(currentIndex);
+        const scene = updatedScenes[currentIndex];
+
+        try {
+          const result = await videoService.generateScene(
+            scene,
+            currentProject.visualBible,
+            currentProject.masterCharacter,
+            currentProject.aspectRatio
+          );
+
+          if (result.assetUrl) {
+            updatedScenes[currentIndex] = {
+              ...scene,
+              status: 'ready',
+              generatedAssetUrl: result.assetUrl,
+              thumbnailUrl: result.thumbnailUrl || result.assetUrl,
+              assetType: result.assetType || 'image',
+              errorMessage: undefined,
+            };
+          } else {
+            throw new Error('Nenhum asset visual retornado.');
+          }
+        } catch (err: any) {
+          const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
+          console.error(`Failed to generate scene ${currentIndex + 1}:`, errorMsg);
+          updatedScenes[currentIndex] = {
+            ...scene,
+            status: 'error',
+            errorMessage: errorMsg,
+            generatedAssetUrl: undefined,
+          };
+        }
+
+        const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
+        setGeneratingProgress((readyCount / updatedScenes.length) * 100);
+        handleUpdateProject({ scenes: [...updatedScenes] });
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
     setIsGeneratingAll(false);
   };
 
-  // 5. Batch Scene Generation
+  // 5. Batch Scene Generation (Parallel Concurrency)
   const handleStartBatchGeneration = async (scenesOverride?: Scene[]) => {
     if (isGeneratingAll) return;
     setIsGeneratingAll(true);
@@ -378,50 +394,61 @@ export function App() {
     const sourceScenes = scenesOverride || currentProject.scenes;
     const updatedScenes = [...sourceScenes];
 
+    // Mark all scenes as generating
     for (let i = 0; i < updatedScenes.length; i++) {
-      setCurrentGeneratingSceneIndex(i);
-      const scene = updatedScenes[i];
+      updatedScenes[i] = { ...updatedScenes[i], status: 'generating', errorMessage: undefined };
+    }
+    handleUpdateProject({ scenes: [...updatedScenes] });
 
-      // Update scene status to generating
-      updatedScenes[i] = { ...scene, status: 'generating', errorMessage: undefined };
-      handleUpdateProject({ scenes: [...updatedScenes] });
+    // Concurrency limit of 3 parallel workers
+    const concurrency = Math.min(3, updatedScenes.length);
+    let queueIdx = 0;
 
-      try {
-        const result = await videoService.generateScene(
-          scene,
-          currentProject.visualBible,
-          currentProject.masterCharacter,
-          currentProject.aspectRatio
-        );
+    const worker = async () => {
+      while (queueIdx < updatedScenes.length) {
+        const i = queueIdx++;
+        setCurrentGeneratingSceneIndex(i);
+        const scene = updatedScenes[i];
 
-        if (result.assetUrl) {
+        try {
+          const result = await videoService.generateScene(
+            scene,
+            currentProject.visualBible,
+            currentProject.masterCharacter,
+            currentProject.aspectRatio
+          );
+
+          if (result.assetUrl) {
+            updatedScenes[i] = {
+              ...scene,
+              status: 'ready',
+              generatedAssetUrl: result.assetUrl,
+              thumbnailUrl: result.thumbnailUrl || result.assetUrl,
+              assetType: result.assetType || 'image',
+              errorMessage: undefined,
+            };
+          } else {
+            throw new Error('Nenhum asset retornado pela geração.');
+          }
+        } catch (err: any) {
+          const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
+          console.error(`Failed to generate scene ${i + 1}:`, errorMsg);
           updatedScenes[i] = {
             ...scene,
-            status: 'ready',
-            generatedAssetUrl: result.assetUrl,
-            thumbnailUrl: result.thumbnailUrl || result.assetUrl,
-            assetType: result.assetType || 'image',
-            errorMessage: undefined,
+            status: 'error',
+            errorMessage: errorMsg,
+            generatedAssetUrl: undefined,
           };
-        } else {
-          throw new Error('Nenhum asset retornado pela geração.');
         }
-      } catch (err: any) {
-        const errorMsg = err?.message || 'Erro ao comunicar com a API Gemini.';
-        console.error(`Failed to generate scene ${i + 1}:`, errorMsg);
-        updatedScenes[i] = {
-          ...scene,
-          status: 'error',
-          errorMessage: errorMsg,
-          generatedAssetUrl: undefined,
-        };
+
+        const readyCount = updatedScenes.filter((s) => s.status === 'ready' && s.generatedAssetUrl).length;
+        const progress = (readyCount / updatedScenes.length) * 100;
+        setGeneratingProgress(progress);
+        handleUpdateProject({ scenes: [...updatedScenes] });
       }
+    };
 
-      const progress = ((i + 1) / updatedScenes.length) * 100;
-      setGeneratingProgress(progress);
-      handleUpdateProject({ scenes: [...updatedScenes] });
-    }
-
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
     setIsGeneratingAll(false);
   };
 
