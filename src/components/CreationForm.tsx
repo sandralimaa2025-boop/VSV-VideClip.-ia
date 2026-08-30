@@ -69,7 +69,7 @@ export const CreationForm: React.FC<CreationFormProps> = ({
     { label: 'Noir & Chiaroscuro Monocromático', colors: ['#000000', '#52525b', '#f4f4f5'] },
     { label: 'Teal & Orange Hollywoodiano', colors: ['#0d9488', '#ea580c', '#111827'] },
     { label: 'Esmeralda & Verde Floresta', colors: ['#059669', '#064e3b', '#a7f3d0'] },
-    { label: 'Vermelho Carmim & Sombra', colors: ['#dc2626', '#450a0a', '#18181b'] },
+    { label: 'Vermelho Bordô, Preto & Branco', colors: ['#800020', '#000000', '#ffffff'] },
   ];
 
   // Alfinete no mapa suggestions
