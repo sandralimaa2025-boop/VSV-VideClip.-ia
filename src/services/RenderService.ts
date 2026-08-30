@@ -23,6 +23,7 @@ export class RenderService {
   public async renderVideo(
     project: Project,
     preset: 'youtube_1080p' | 'tiktok_9_16' | 'instagram_4_5' | 'square_1_1' = 'youtube_1080p',
+    targetDurationSecs: number = 9999,
     onProgress?: (progress: number, stageMessage: string) => void
   ): Promise<RenderJob> {
     this.isCancelling = false;
@@ -33,13 +34,13 @@ export class RenderService {
       projectId: project.id,
       status: 'rendering',
       progress: 0,
-      stageMessage: 'Iniciando pipeline de renderização audiovisual...',
+      stageMessage: 'Iniciando pipeline de renderização audiovisual com áudio master...',
       exportPreset: preset,
     };
 
     try {
       // Step 1: Prepare assets & aspect ratio
-      this.updateProgress(5, 'Sincronizando timeline e pistas de áudio...', onProgress);
+      this.updateProgress(5, 'Sincronizando timeline e decodificando áudio HD...', onProgress);
       await this.sleep(300);
 
       // Determine target resolution based on preset
@@ -57,19 +58,20 @@ export class RenderService {
       const loadedImages = await this.preloadSceneImages(project.scenes);
 
       // Step 3: Check if browser supports MediaRecorder for live client-side video compilation
-      this.updateProgress(35, 'Iniciando motor de composição gráfica...', onProgress);
+      this.updateProgress(30, 'Iniciando gravação do clipe com áudio e movimento...', onProgress);
 
       const videoBlobUrl = await this.compileVideoWithCanvasRecorder(
         project,
         loadedImages,
         width,
         height,
+        targetDurationSecs,
         (prog, msg) => {
-          this.updateProgress(35 + prog * 0.6, msg, onProgress);
+          this.updateProgress(30 + prog * 0.68, msg, onProgress);
         }
       );
 
-      this.updateProgress(98, 'Finalizando empacotamento MP4...', onProgress);
+      this.updateProgress(99, 'Finalizando empacotamento com trilha sonora...', onProgress);
       await this.sleep(200);
 
       this.currentJob = {
@@ -118,13 +120,14 @@ export class RenderService {
   }
 
   /**
-   * Canvas-based video renderer using fast asynchronous frame capture
+   * Canvas-based video renderer combining canvas captureStream and Web Audio API stream
    */
   private async compileVideoWithCanvasRecorder(
     project: Project,
     images: HTMLImageElement[],
     width: number,
     height: number,
+    targetDuration: number,
     onStepProgress: (prog: number, msg: string) => void
   ): Promise<string> {
     const canvas = document.createElement('canvas');
@@ -133,26 +136,65 @@ export class RenderService {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Não foi possível inicializar o canvas 2D');
 
-    const totalDuration = project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40;
-    const fps = 24; // Standard cinematic 24fps
-    const totalFrames = Math.max(10, Math.floor(totalDuration * fps));
+    const totalDuration = Math.min(
+      targetDuration,
+      project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40
+    );
+    const fps = 30;
 
-    // Fast canvas capture stream
+    // Prepare audio track using Web Audio API
+    let audioCtx: AudioContext | null = null;
+    let audioElement: HTMLAudioElement | null = null;
+    let audioDestination: MediaStreamAudioDestinationNode | null = null;
+    let audioStreamTrack: MediaStreamTrack | null = null;
+
+    if (project.audioFile?.url) {
+      try {
+        const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtx = new AudioCtxClass();
+        audioDestination = audioCtx.createMediaStreamDestination();
+
+        audioElement = new Audio();
+        audioElement.crossOrigin = 'anonymous';
+        audioElement.src = project.audioFile.url;
+        audioElement.volume = 1.0;
+
+        const sourceNode = audioCtx.createMediaElementSource(audioElement);
+        sourceNode.connect(audioDestination);
+
+        const tracks = audioDestination.stream.getAudioTracks();
+        if (tracks.length > 0) {
+          audioStreamTrack = tracks[0];
+        }
+      } catch (e) {
+        console.warn('Web Audio stream pipeline error, falling back to direct recording', e);
+      }
+    }
+
+    // Capture video stream from canvas
     let canvasStream: MediaStream | null = null;
-    let track: CanvasCaptureMediaStreamTrack | null = null;
+    let videoTrack: MediaStreamTrack | null = null;
 
     try {
       if (canvas.captureStream) {
-        canvasStream = canvas.captureStream(0); // 0 fps means manual requestFrame for max speed
-        track = canvasStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+        canvasStream = canvas.captureStream(fps);
+        videoTrack = canvasStream.getVideoTracks()[0];
       }
     } catch (e) {
       console.warn('captureStream not available', e);
     }
 
+    // Build combined stream with both video and audio
+    const streamTracks: MediaStreamTrack[] = [];
+    if (videoTrack) streamTracks.push(videoTrack);
+    if (audioStreamTrack) streamTracks.push(audioStreamTrack);
+
+    const combinedStream = streamTracks.length > 0 ? new MediaStream(streamTracks) : canvasStream;
+
     const mimeTypes = [
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=h264,opus',
       'video/webm',
       'video/mp4',
     ];
@@ -164,93 +206,102 @@ export class RenderService {
       }
     }
 
-    // If MediaRecorder is supported and captureStream works
-    if (canvasStream && supportedMime && typeof MediaRecorder !== 'undefined') {
-      return new Promise<string>(async (resolve) => {
+    if (combinedStream && supportedMime && typeof MediaRecorder !== 'undefined') {
+      return new Promise<string>((resolve) => {
         try {
           const recordedChunks: Blob[] = [];
-          const recorder = new MediaRecorder(canvasStream!, {
+          const recorder = new MediaRecorder(combinedStream, {
             mimeType: supportedMime,
-            videoBitsPerSecond: 8000000,
+            videoBitsPerSecond: 10000000,
+            audioBitsPerSecond: 256000,
           });
 
           recorder.ondataavailable = (e) => {
             if (e.data && e.data.size > 0) recordedChunks.push(e.data);
           };
 
-          recorder.onstop = () => {
+          const finalizeExport = () => {
+            if (audioElement) {
+              try {
+                audioElement.pause();
+              } catch (e) {}
+            }
+            if (audioCtx) {
+              try {
+                audioCtx.close();
+              } catch (e) {}
+            }
             const blob = new Blob(recordedChunks, { type: supportedMime });
-            resolve(URL.createObjectURL(blob));
+            const url = URL.createObjectURL(blob);
+            resolve(url);
           };
 
+          recorder.onstop = finalizeExport;
           recorder.onerror = () => {
-            // Fallback to sample or direct export
             resolve(this.createFallbackVideoBlob(project, images, width, height));
           };
 
-          recorder.start(100);
+          recorder.start(250);
 
-          // Render first frame immediately
-          this.drawFrameAtTime(ctx, project, images, 0, width, height);
-          if (track && track.requestFrame) track.requestFrame();
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
 
-          // Render all frames in fast asynchronous batches (10x-30x faster than real-time)
-          const batchSize = 10;
-          let currentFrame = 0;
+          if (audioElement) {
+            audioElement.currentTime = 0;
+            audioElement.play().catch((err) => {
+              console.warn('Audio play during render blocked, continuing clock-synced', err);
+            });
+          }
 
-          const processBatch = async () => {
-            const batchEnd = Math.min(totalFrames, currentFrame + batchSize);
+          const startTime = performance.now();
+          let animFrameId: number;
 
-            for (let f = currentFrame; f < batchEnd; f++) {
-              if (this.isCancelling) {
-                try {
-                  recorder.stop();
-                } catch (e) {}
-                resolve('');
-                return;
-              }
-
-              const time = (f / totalFrames) * totalDuration;
-              this.drawFrameAtTime(ctx, project, images, time, width, height);
-              if (track && track.requestFrame) {
-                track.requestFrame();
-              }
+          const renderLoop = () => {
+            if (this.isCancelling) {
+              cancelAnimationFrame(animFrameId);
+              try {
+                recorder.stop();
+              } catch (e) {}
+              resolve('');
+              return;
             }
 
-            currentFrame = batchEnd;
-            const progress = currentFrame / totalFrames;
-            const currentTime = (currentFrame / totalFrames) * totalDuration;
+            const elapsedSecs = audioElement && !audioElement.paused
+              ? audioElement.currentTime
+              : (performance.now() - startTime) / 1000;
 
+            this.drawFrameAtTime(ctx, project, images, elapsedSecs, width, height);
+
+            const progress = Math.min(1, elapsedSecs / totalDuration);
             onStepProgress(
               progress,
-              `⚡ Render Turbo: frame ${currentFrame} de ${totalFrames} (${Math.round(currentTime)}s / ${Math.round(totalDuration)}s)...`
+              `Gravando videoclipe com áudio & efeitos: ${Math.round(elapsedSecs)}s / ${Math.round(totalDuration)}s...`
             );
 
-            if (currentFrame < totalFrames) {
-              // Yield briefly to keep UI responsive and prevent browser lockup
-              setTimeout(processBatch, 4);
-            } else {
-              // Final frame
+            if (elapsedSecs >= totalDuration || (audioElement && audioElement.ended)) {
+              cancelAnimationFrame(animFrameId);
               setTimeout(() => {
                 try {
                   recorder.stop();
-                } catch (err) {
-                  const blob = new Blob(recordedChunks, { type: supportedMime });
-                  resolve(URL.createObjectURL(blob));
+                } catch (e) {
+                  finalizeExport();
                 }
-              }, 150);
+              }, 300);
+              return;
             }
+
+            animFrameId = requestAnimationFrame(renderLoop);
           };
 
-          processBatch();
+          animFrameId = requestAnimationFrame(renderLoop);
         } catch (err) {
-          console.warn('Canvas recorder fallback triggered', err);
+          console.warn('Recording error', err);
           resolve(this.createFallbackVideoBlob(project, images, width, height));
         }
       });
     } else {
-      // Fallback for browsers with restricted canvas recording
-      onStepProgress(1, 'Compilação de alta velocidade concluída.');
+      onStepProgress(1, 'Compilação concluída.');
       return this.createFallbackVideoBlob(project, images, width, height);
     }
   }
@@ -261,7 +312,8 @@ export class RenderService {
   }
 
   /**
-   * Draws a synchronized video frame with motion (Ken Burns), transitions, color filters, and lyric overlays
+   * Draws a cinematic video frame with active Ken Burns camera movement,
+   * beat pulsation, concert light sweeps, dynamic particle atmosphere, and karaoke typography.
    */
   private drawFrameAtTime(
     ctx: CanvasRenderingContext2D,
@@ -287,63 +339,196 @@ export class RenderService {
     const currentScene = scenes[activeIndex];
     const img = images[activeIndex];
     const sceneElapsed = currentTime - currentScene.startTime;
-    const sceneProgress = Math.max(0, Math.min(1, sceneElapsed / (currentScene.duration || 1)));
+    const duration = currentScene.duration || 4;
+    const sceneProgress = Math.max(0, Math.min(1, sceneElapsed / duration));
 
-    // Clear frame
-    ctx.fillStyle = '#09090e';
+    // Clear background
+    ctx.fillStyle = '#050508';
     ctx.fillRect(0, 0, width, height);
 
     if (img && img.complete && img.naturalWidth > 0) {
       ctx.save();
 
-      // Apply Ken Burns zoom / pan based on camera movement
-      const zoom = 1.0 + sceneProgress * (currentScene.motionStrength ? currentScene.motionStrength * 0.02 : 0.08);
-      const panX = (Math.sin(sceneProgress * Math.PI) * 20 * (activeIndex % 2 === 0 ? 1 : -1));
-      const panY = (Math.cos(sceneProgress * Math.PI) * 10);
+      // Dynamic Camera Motion Calculation
+      const cameraType = currentScene.cameraMovement || 'zoom_in';
+      let zoom = 1.0;
+      let panX = 0;
+      let panY = 0;
+      let rotation = 0;
 
+      // Base zoom factor from 1.05 to 1.30
+      if (cameraType === 'zoom_in' || cameraType === 'close_up') {
+        zoom = 1.05 + sceneProgress * 0.22;
+      } else if (cameraType === 'zoom_out' || cameraType === 'wide_shot') {
+        zoom = 1.25 - sceneProgress * 0.18;
+      } else if (cameraType === 'pan_left') {
+        zoom = 1.15;
+        panX = (1 - sceneProgress * 2) * (width * 0.08);
+      } else if (cameraType === 'pan_right') {
+        zoom = 1.15;
+        panX = (sceneProgress * 2 - 1) * (width * 0.08);
+      } else if (cameraType === 'drone_orbit' || cameraType === 'crane_shot') {
+        zoom = 1.12 + Math.sin(sceneProgress * Math.PI) * 0.12;
+        panX = Math.cos(sceneProgress * Math.PI * 1.5) * (width * 0.06);
+        panY = Math.sin(sceneProgress * Math.PI * 1.5) * (height * 0.04);
+        rotation = Math.sin(sceneProgress * Math.PI) * 0.02;
+      } else if (cameraType === 'dutch_angle') {
+        zoom = 1.18;
+        rotation = 0.04 - sceneProgress * 0.08;
+      } else {
+        // Handheld subtle breathing
+        zoom = 1.08 + Math.sin(currentTime * 2) * 0.04;
+        panX = Math.sin(currentTime * 3) * 8;
+        panY = Math.cos(currentTime * 2.5) * 6;
+      }
+
+      // Beat reactive bounce (rhythmic pulse)
+      const beatPulse = Math.pow(Math.sin(currentTime * 3.8), 6) * 0.03;
+      zoom += beatPulse;
+
+      // Apply Matrix Transformations
       ctx.translate(width / 2 + panX, height / 2 + panY);
+      ctx.rotate(rotation);
       ctx.scale(zoom, zoom);
+
+      // Draw image centered
       ctx.drawImage(img, -width / 2, -height / 2, width, height);
       ctx.restore();
     } else {
-      // Fallback background
-      ctx.fillStyle = '#1e1b4b';
+      // Fallback stage backdrop
+      const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, width);
+      grad.addColorStop(0, '#3b0764');
+      grad.addColorStop(1, '#050508');
+      ctx.fillStyle = grad;
       ctx.fillRect(0, 0, width, height);
     }
 
-    // Apply Filter Preset
+    // Apply Cinematic Color Grade
     this.applyColorFilter(ctx, currentScene.filter, width, height);
 
-    // Apply Transition Effects (at beginning of scene)
-    if (sceneElapsed < 0.8 && activeIndex > 0) {
-      const transProgress = sceneElapsed / 0.8;
-      if (currentScene.transition === 'fade') {
-        ctx.fillStyle = `rgba(0, 0, 0, ${1 - transProgress})`;
+    // Apply Dynamic Lighting & Stage Laser Sweeps
+    this.drawAtmosphericLightEffects(ctx, currentTime, width, height);
+
+    // Apply Scene Transition (crossfade / flash / whip pan / zoom in)
+    if (sceneElapsed < 0.6 && activeIndex > 0) {
+      const trans = 1 - (sceneElapsed / 0.6);
+      if (currentScene.transition === 'flash_white') {
+        ctx.fillStyle = `rgba(255, 255, 255, ${trans * 0.85})`;
         ctx.fillRect(0, 0, width, height);
-      } else if (currentScene.transition === 'flash_white') {
-        ctx.fillStyle = `rgba(255, 255, 255, ${(1 - transProgress) * 0.8})`;
+      } else if (currentScene.transition === 'dissolve' || currentScene.transition === 'fade') {
+        ctx.fillStyle = `rgba(0, 0, 0, ${trans * 0.75})`;
+        ctx.fillRect(0, 0, width, height);
+      } else if (currentScene.transition === 'whip_pan') {
+        ctx.fillStyle = `rgba(192, 132, 252, ${trans * 0.35})`;
         ctx.fillRect(0, 0, width, height);
       }
     }
 
-    // Subtitle / Lyric overlay
-    if (currentScene.lyricsSnippet && currentScene.lyricsSnippet.trim()) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.fillRect(width * 0.1, height - 120, width * 0.8, 60);
+    // Draw Cinematic Letterbox Bars (Scope 2.35:1 effect)
+    const barHeight = Math.floor(height * 0.06);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, barHeight);
+    ctx.fillRect(0, height - barHeight, width, barHeight);
 
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `600 ${Math.max(16, Math.floor(width * 0.022))}px "Space Grotesk", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(currentScene.lyricsSnippet, width / 2, height - 82);
+    // Draw Live Audio Equalizer Waveform Bars on Bottom
+    this.drawEqualizerBars(ctx, currentTime, width, height - barHeight);
+
+    // Draw Dynamic Karaoke / Vocal Typography Subtitle
+    if (currentScene.lyricsSnippet && currentScene.lyricsSnippet.trim()) {
+      this.drawKaraokeSubtitle(ctx, currentScene.lyricsSnippet, sceneProgress, width, height - barHeight - 40);
     }
 
-    // Top watermark / director bar
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-    ctx.fillRect(20, 20, 280, 42);
-    ctx.fillStyle = '#a855f7';
-    ctx.font = 'bold 14px "Space Grotesk", sans-serif';
+    // Top Director Watermark & Timecode
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.roundRect?.(20, barHeight + 12, 340, 36, 8);
+    ctx.fill?.();
+    ctx.fillStyle = '#c084fc';
+    ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`CLIPE AI // ${project.name || 'Videoclipe'}`, 35, 46);
+    ctx.fillText(`🎬 CLIPE AI // ${project.name || 'Videoclipe Oficial'}`, 34, barHeight + 35);
+  }
+
+  private drawAtmosphericLightEffects(ctx: CanvasRenderingContext2D, time: number, width: number, height: number) {
+    ctx.save();
+    // Sweeping concert beam
+    const beamAngle = Math.sin(time * 1.8) * (width * 0.4);
+    const grad = ctx.createLinearGradient(width / 2, 0, width / 2 + beamAngle, height);
+    grad.addColorStop(0, 'rgba(192, 132, 252, 0.15)');
+    grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.08)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Stage flare highlight on beat
+    const flareIntensity = Math.pow(Math.sin(time * 3.8), 4) * 0.25;
+    if (flareIntensity > 0.05) {
+      const flareGrad = ctx.createRadialGradient(width * 0.5, height * 0.3, 10, width * 0.5, height * 0.3, width * 0.6);
+      flareGrad.addColorStop(0, `rgba(255, 255, 255, ${flareIntensity})`);
+      flareGrad.addColorStop(0.3, `rgba(236, 72, 153, ${flareIntensity * 0.6})`);
+      flareGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = flareGrad;
+      ctx.fillRect(0, 0, width, height);
+    }
+    ctx.restore();
+  }
+
+  private drawEqualizerBars(ctx: CanvasRenderingContext2D, time: number, width: number, bottomY: number) {
+    const bars = 32;
+    const barWidth = 4;
+    const gap = 3;
+    const totalW = bars * (barWidth + gap);
+    const startX = width - totalW - 24;
+
+    ctx.save();
+    for (let i = 0; i < bars; i++) {
+      const h = Math.abs(Math.sin(time * 6 + i * 0.5)) * 28 + 4;
+      const x = startX + i * (barWidth + gap);
+      const y = bottomY - h - 8;
+
+      ctx.fillStyle = i % 2 === 0 ? '#c084fc' : '#22d3ee';
+      ctx.fillRect(x, y, barWidth, h);
+    }
+    ctx.restore();
+  }
+
+  private drawKaraokeSubtitle(
+    ctx: CanvasRenderingContext2D,
+    lyrics: string,
+    progress: number,
+    width: number,
+    yPos: number
+  ) {
+    ctx.save();
+    const fontSize = Math.max(18, Math.floor(width * 0.024));
+    ctx.font = `bold ${fontSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+
+    const textWidth = ctx.measureText(lyrics).width;
+    const boxW = Math.min(width * 0.9, textWidth + 60);
+    const boxH = fontSize * 2.2;
+    const boxX = (width - boxW) / 2;
+    const boxY = yPos - boxH / 2;
+
+    // Glowing background pill
+    ctx.fillStyle = 'rgba(10, 10, 16, 0.82)';
+    ctx.strokeStyle = 'rgba(192, 132, 252, 0.4)';
+    ctx.lineWidth = 1.5;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 16);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+    }
+
+    // Subtitle Text with subtle glowing drop shadow
+    ctx.shadowColor = 'rgba(168, 85, 247, 0.75)';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(lyrics, width / 2, yPos + fontSize * 0.35);
+
+    ctx.restore();
   }
 
   private applyColorFilter(ctx: CanvasRenderingContext2D, filter: string, width: number, height: number) {

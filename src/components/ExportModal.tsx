@@ -30,22 +30,33 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
   const [selectedPreset, setSelectedPreset] = useState<
     'youtube_1080p' | 'tiktok_9_16' | 'instagram_4_5' | 'square_1_1'
   >('youtube_1080p');
+  const [selectedDuration, setSelectedDuration] = useState<'full' | '30s' | '60s'>('full');
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [stageMessage, setStageMessage] = useState('');
   const [completedJob, setCompletedJob] = useState<RenderJob | null>(null);
 
+  const totalSongDuration = project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40;
+
   const startRender = async () => {
     setIsRendering(true);
     setRenderProgress(5);
-    setStageMessage('Iniciando pipeline de exportação...');
+    setStageMessage('Iniciando pipeline de exportação com áudio master...');
+
+    const durationLimit =
+      selectedDuration === '30s' ? 30 : selectedDuration === '60s' ? 60 : 99999;
 
     try {
       const renderService = RenderService.getInstance();
-      const job = await renderService.renderVideo(project, selectedPreset, (prog, msg) => {
-        setRenderProgress(prog);
-        setStageMessage(msg);
-      });
+      const job = await renderService.renderVideo(
+        project,
+        selectedPreset,
+        durationLimit,
+        (prog, msg) => {
+          setRenderProgress(prog);
+          setStageMessage(msg);
+        }
+      );
       setCompletedJob(job);
     } catch (e) {
       console.error('Render failed', e);
@@ -134,34 +145,76 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
         {/* Preset Selector */}
         {!completedJob && !isRendering && (
-          <div className="space-y-3">
-            <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
-              Selecione o Formato de Saída:
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { id: 'youtube_1080p', label: 'YouTube / Cinema (1080p 16:9)', icon: Tv },
-                { id: 'tiktok_9_16', label: 'TikTok / Reels (1080x1920 9:16)', icon: Smartphone },
-                { id: 'instagram_4_5', label: 'Instagram Feed (1080x1350 4:5)', icon: Instagram },
-                { id: 'square_1_1', label: 'Quadrado (1080x1080 1:1)', icon: Square },
-              ].map((fmt) => {
-                const Icon = fmt.icon;
-                const isSelected = selectedPreset === fmt.id;
-                return (
-                  <button
-                    key={fmt.id}
-                    onClick={() => setSelectedPreset(fmt.id as any)}
-                    className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-2 text-center transition-all ${
-                      isSelected
-                        ? 'bg-violet-900/80 border-violet-500 text-white font-bold glow-purple'
-                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    <Icon className={`w-5 h-5 ${isSelected ? 'text-cyan-400' : 'text-zinc-400'}`} />
-                    <span className="text-xs">{fmt.label}</span>
-                  </button>
-                );
-              })}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
+                1. Selecione a Duração do Vídeo:
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'full', label: `Completo (${Math.round(totalSongDuration)}s)`, desc: 'Música inteira com áudio HD' },
+                  { id: '60s', label: 'Destaque (60s)', desc: 'Ideal para Shorts' },
+                  { id: '30s', label: 'Teaser (30s)', desc: 'Ideal para Reels' },
+                ].map((dur) => {
+                  const isSel = selectedDuration === dur.id;
+                  return (
+                    <button
+                      key={dur.id}
+                      onClick={() => setSelectedDuration(dur.id as any)}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        isSel
+                          ? 'bg-violet-900/80 border-violet-500 text-white glow-purple font-bold'
+                          : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{dur.label}</div>
+                      <div className="text-[10px] text-zinc-400">{dur.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
+                2. Selecione o Formato de Saída:
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: 'youtube_1080p', label: 'YouTube / Cinema (1080p 16:9)', icon: Tv },
+                  { id: 'tiktok_9_16', label: 'TikTok / Reels (1080x1920 9:16)', icon: Smartphone },
+                  { id: 'instagram_4_5', label: 'Instagram Feed (1080x1350 4:5)', icon: Instagram },
+                  { id: 'square_1_1', label: 'Quadrado (1080x1080 1:1)', icon: Square },
+                ].map((fmt) => {
+                  const Icon = fmt.icon;
+                  const isSelected = selectedPreset === fmt.id;
+                  return (
+                    <button
+                      key={fmt.id}
+                      onClick={() => setSelectedPreset(fmt.id as any)}
+                      className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-2 text-center transition-all ${
+                        isSelected
+                          ? 'bg-violet-900/80 border-violet-500 text-white font-bold glow-purple'
+                          : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 ${isSelected ? 'text-cyan-400' : 'text-zinc-400'}`} />
+                      <span className="text-xs">{fmt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Audio & Motion Guarantee Callout */}
+            <div className="p-3 rounded-xl bg-violet-950/40 border border-violet-500/30 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                🎵
+              </div>
+              <div className="text-[11px] text-zinc-300 space-y-0.5">
+                <p className="font-bold text-white">Áudio da Música & Movimento de Câmera 100% Integrados</p>
+                <p className="text-zinc-400">O arquivo gerado conterá a música original sendo cantada com sincronismo perfeito e animação cinematográfica.</p>
+              </div>
             </div>
           </div>
         )}

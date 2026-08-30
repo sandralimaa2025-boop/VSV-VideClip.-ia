@@ -69,6 +69,48 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
     scenes.find((s) => currentTime >= s.startTime && currentTime < s.endTime) ||
     (currentTime >= totalDuration ? scenes[scenes.length - 1] : scenes[0]);
 
+  // Dynamic motion calculations for player preview
+  const sceneElapsed = currentPlayingScene ? Math.max(0, currentTime - currentPlayingScene.startTime) : 0;
+  const sceneDuration = currentPlayingScene?.duration || 4;
+  const sceneProgress = Math.max(0, Math.min(1, sceneElapsed / sceneDuration));
+
+  let cameraScale = 1.05;
+  let cameraPanX = 0;
+  let cameraPanY = 0;
+  let cameraRot = 0;
+
+  if (currentPlayingScene) {
+    const movement = currentPlayingScene.cameraMovement || 'zoom_in';
+    if (movement === 'zoom_in' || movement === 'close_up') {
+      cameraScale = 1.05 + sceneProgress * 0.22;
+    } else if (movement === 'zoom_out' || movement === 'wide_shot') {
+      cameraScale = 1.25 - sceneProgress * 0.18;
+    } else if (movement === 'pan_left') {
+      cameraScale = 1.15;
+      cameraPanX = (1 - sceneProgress * 2) * 35;
+    } else if (movement === 'pan_right') {
+      cameraScale = 1.15;
+      cameraPanX = (sceneProgress * 2 - 1) * 35;
+    } else if (movement === 'drone_orbit' || movement === 'crane_shot') {
+      cameraScale = 1.12 + Math.sin(sceneProgress * Math.PI) * 0.12;
+      cameraPanX = Math.cos(sceneProgress * Math.PI * 1.5) * 25;
+      cameraPanY = Math.sin(sceneProgress * Math.PI * 1.5) * 15;
+      cameraRot = Math.sin(sceneProgress * Math.PI) * 1.5;
+    } else if (movement === 'dutch_angle') {
+      cameraScale = 1.18;
+      cameraRot = 2 - sceneProgress * 4;
+    } else {
+      cameraScale = 1.08 + Math.sin(currentTime * 2) * 0.03;
+      cameraPanX = Math.sin(currentTime * 3) * 6;
+      cameraPanY = Math.cos(currentTime * 2.5) * 4;
+    }
+
+    if (isPlaying) {
+      const beatBounce = Math.pow(Math.sin(currentTime * 3.8), 6) * 0.025;
+      cameraScale += beatBounce;
+    }
+  }
+
   // Audio Playback Synchronization
   useEffect(() => {
     if (audioRef.current) {
@@ -284,17 +326,33 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 : 'aspect-video w-full'
             }`}
           >
-            {/* Active Scene Asset */}
+            {/* Active Scene Asset with Kinetic Camera Motion */}
             {currentPlayingScene?.generatedAssetUrl || currentPlayingScene?.thumbnailUrl ? (
-              <img
-                src={currentPlayingScene.generatedAssetUrl || currentPlayingScene.thumbnailUrl}
-                alt={`Cena ${currentPlayingScene.order}`}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  e.currentTarget.src = 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80';
-                }}
-                className="w-full h-full object-cover select-none"
-              />
+              <div className="w-full h-full overflow-hidden flex items-center justify-center relative">
+                <img
+                  src={currentPlayingScene.generatedAssetUrl || currentPlayingScene.thumbnailUrl}
+                  alt={`Cena ${currentPlayingScene.order}`}
+                  referrerPolicy="no-referrer"
+                  style={{
+                    transform: `scale(${cameraScale}) translate(${cameraPanX}px, ${cameraPanY}px) rotate(${cameraRot}deg)`,
+                    transition: isPlaying ? 'transform 0.08s linear' : 'transform 0.3s ease-out',
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1600&auto=format&fit=crop&q=80';
+                  }}
+                  className="w-full h-full object-cover select-none will-change-transform"
+                />
+
+                {/* Stage Lighting & Laser Sweep Simulation */}
+                {isPlaying && (
+                  <div
+                    className="absolute inset-0 pointer-events-none opacity-40 mix-blend-screen transition-opacity"
+                    style={{
+                      background: `linear-gradient(${110 + Math.sin(currentTime * 2) * 40}deg, transparent 30%, rgba(192, 132, 252, 0.4) 50%, rgba(6, 182, 212, 0.3) 60%, transparent 75%)`,
+                    }}
+                  />
+                )}
+              </div>
             ) : (
               <div className="text-center p-6 space-y-2">
                 <Film className="w-10 h-10 text-zinc-700 mx-auto" />
@@ -316,11 +374,27 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
               <div className="absolute inset-0 bg-blue-900/20 mix-blend-color pointer-events-none" />
             )}
 
-            {/* Lyrics Subtitle Overlay on screen */}
+            {/* Equalizer Visualizer Bars in Player */}
+            {isPlaying && (
+              <div className="absolute bottom-4 right-4 flex items-end gap-1 pointer-events-none bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10">
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="w-1 bg-gradient-to-t from-violet-500 to-cyan-400 rounded-full transition-all duration-75"
+                    style={{
+                      height: `${Math.max(4, Math.abs(Math.sin(currentTime * 5 + idx * 0.8)) * 18)}px`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Lyrics Subtitle Overlay on screen with Karaoke glow */}
             {currentPlayingScene?.lyricsSnippet && (
               <div className="absolute bottom-6 left-6 right-6 text-center pointer-events-none">
-                <span className="inline-block px-4 py-1.5 rounded-lg bg-black/80 backdrop-blur-md text-white text-xs sm:text-sm font-semibold tracking-wide border border-white/10 shadow-lg">
-                  {currentPlayingScene.lyricsSnippet}
+                <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black/85 backdrop-blur-md text-white text-xs sm:text-sm font-bold tracking-wide border border-violet-500/40 shadow-2xl glow-purple animate-fadeIn">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  <span>{currentPlayingScene.lyricsSnippet}</span>
                 </span>
               </div>
             )}
