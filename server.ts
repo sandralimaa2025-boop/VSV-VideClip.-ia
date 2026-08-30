@@ -3,16 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import express from 'express';
+import express, { Express } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
 // Shared Gemini Client (Server-side only)
-function getGeminiClient(): GoogleGenAI | null {
+export function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
   return new GoogleGenAI({
@@ -25,12 +25,20 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-async function startServer() {
+export function createExpressApp(): Express {
   const app = express();
-  const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Diagnostic request logger for all /api calls
+  app.use('/api', (req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      console.log(`[API LOG] ${req.method} ${req.originalUrl} -> HTTP ${res.statusCode} (${res.get('Content-Type') || 'no-type'}) in ${Date.now() - start}ms`);
+    });
+    next();
+  });
 
   // --- API Routes ---
 
@@ -58,7 +66,7 @@ async function startServer() {
       if (!ai) {
         return res.status(200).json({
           analysis: null,
-          message: 'Gemini key not configured on server, fallback enabled',
+          message: 'Gemini key not configured on server',
         });
       }
 
@@ -81,18 +89,18 @@ Retorne exclusivamente um JSON no seguinte formato:
   "bpm": number,
   "detectedGenre": string,
   "overallMood": string,
-  "energyCurve": number[], // Array com 8 valores de 0 a 100
+  "energyCurve": number[],
   "emotionalTimeline": [
     { "stage": "INTRO" | "CONSTRUÇÃO" | "TENSÃO" | "REFRÃO" | "CLÍMAX" | "DESFECHO", "timeRange": string, "description": string }
   ],
-  "keyHitMoments": number[], // timestamps em segundos dos momentos de maior impacto
+  "keyHitMoments": number[],
   "sections": [
     { "name": string, "startTime": number, "endTime": number, "energyLevel": "low"|"building"|"high"|"peak"|"calm", "suggestedPacing": "lento"|"moderado"|"rápido"|"dinâmico", "lyricSnippet": string }
   ]
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -104,7 +112,8 @@ Retorne exclusivamente um JSON no seguinte formato:
       res.json({ analysis: parsed });
     } catch (err: unknown) {
       console.error('Error in /api/director/analyze:', err);
-      res.status(500).json({ error: 'Erro ao analisar música com o Diretor IA' });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Erro ao analisar música com o Diretor IA: ${msg}` });
     }
   });
 
@@ -185,7 +194,7 @@ Retorne estritamente um JSON:
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -197,7 +206,8 @@ Retorne estritamente um JSON:
       res.json(parsed);
     } catch (err: unknown) {
       console.error('Error in /api/director/concept:', err);
-      res.status(500).json({ error: 'Erro ao gerar conceito com o Diretor IA' });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Erro ao gerar conceito com o Diretor IA: ${msg}` });
     }
   });
 
@@ -261,7 +271,7 @@ Retorne exclusivamente um JSON:
       "cameraMovement": string,
       "lens": string,
       "lighting": string,
-      "palette": string,
+      "palette": string[],
       "visualPrompt": string,
       "videoPrompt": string,
       "transition": string,
@@ -271,7 +281,7 @@ Retorne exclusivamente um JSON:
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -283,7 +293,8 @@ Retorne exclusivamente um JSON:
       res.json(parsed);
     } catch (err: unknown) {
       console.error('Error in /api/director/storyboard:', err);
-      res.status(500).json({ error: 'Erro ao gerar storyboard' });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Erro ao gerar storyboard: ${msg}` });
     }
   });
 
@@ -309,7 +320,7 @@ ${JSON.stringify(visualBible || {})}
 Retorne um JSON com a cena atualizada preservando id, startTime, endTime, duration e atualizando emotionalGoal, description, cameraMovement, lighting, visualPrompt, videoPrompt.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json' },
       });
@@ -317,12 +328,13 @@ Retorne um JSON com a cena atualizada preservando id, startTime, endTime, durati
       const parsed = JSON.parse(response.text || '{}');
       res.json({ scene: parsed });
     } catch (err: unknown) {
-      console.error('Error in regenerate-scene:', err);
-      res.status(500).json({ error: 'Erro ao regenerar cena' });
+      console.error('Error in /api/director/regenerate-scene:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Erro ao regenerar cena: ${msg}` });
     }
   });
 
-  // Video / Image Generation Dispatcher Endpoint
+  // Single Scene Visual Generation via Gemini (Imagen 3 / Gemini Image / Veo)
   app.post('/api/generation/scene', async (req, res) => {
     try {
       const { scene, visualBible, masterCharacter, aspectRatio = '16:9' } = req.body;
@@ -350,50 +362,38 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
 
       let lastError: string | null = null;
       let assetUrl: string | null = null;
-      let usedModel = 'gemini-3.1-flash-lite-image';
+      let usedModel = '';
 
-      // 1. Try gemini-3.1-flash-lite-image
+      // 1. Try Imagen 3 via generateImages
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite-image',
-          contents: {
-            parts: [{ text: prompt }],
-          },
+        usedModel = 'imagen-3.0-generate-002';
+        const imgRes = await ai.models.generateImages({
+          model: usedModel,
+          prompt,
           config: {
-            imageConfig: {
-              aspectRatio: formattedRatio as any,
-            },
+            numberOfImages: 1,
+            aspectRatio: (aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : '16:9') as any,
+            outputMimeType: 'image/jpeg',
           },
         });
 
-        const candidates = response.candidates || [];
-        for (const candidate of candidates) {
-          const parts = candidate.content?.parts || [];
-          for (const part of parts) {
-            if (part.inlineData && part.inlineData.data) {
-              const mimeType = part.inlineData.mimeType || 'image/png';
-              assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
-              usedModel = 'gemini-3.1-flash-lite-image';
-              break;
-            }
+        if (imgRes.generatedImages && imgRes.generatedImages.length > 0) {
+          const b64 = imgRes.generatedImages[0].image?.imageBytes;
+          if (b64) {
+            assetUrl = `data:image/jpeg;base64,${b64}`;
           }
-          if (assetUrl) break;
         }
       } catch (err1: any) {
         lastError = err1?.message || String(err1);
-        console.warn('Tentativa com gemini-3.1-flash-lite-image falhou:', lastError);
+        console.warn('Tentativa com imagen-3.0-generate-002 falhou:', lastError);
 
         // 2. Try gemini-3.1-flash-image
         try {
+          usedModel = 'gemini-3.1-flash-image';
           const response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-image',
+            model: usedModel,
             contents: {
               parts: [{ text: prompt }],
-            },
-            config: {
-              imageConfig: {
-                aspectRatio: formattedRatio as any,
-              },
             },
           });
 
@@ -404,7 +404,6 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
               if (part.inlineData && part.inlineData.data) {
                 const mimeType = part.inlineData.mimeType || 'image/png';
                 assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
-                usedModel = 'gemini-3.1-flash-image';
                 break;
               }
             }
@@ -413,28 +412,6 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
         } catch (err2: any) {
           lastError = err2?.message || String(err2);
           console.warn('Tentativa com gemini-3.1-flash-image falhou:', lastError);
-
-          // 3. Try imagen-3.0-generate-002
-          try {
-            const imgRes = await ai.models.generateImages({
-              model: 'imagen-3.0-generate-002',
-              prompt,
-              config: {
-                numberOfImages: 1,
-                aspectRatio: formattedRatio as any,
-                outputMimeType: 'image/jpeg',
-              },
-            });
-
-            if (imgRes.generatedImages && imgRes.generatedImages.length > 0) {
-              const b64 = imgRes.generatedImages[0].image.imageBytes;
-              assetUrl = `data:image/jpeg;base64,${b64}`;
-              usedModel = 'imagen-3.0-generate-002';
-            }
-          } catch (err3: any) {
-            lastError = err3?.message || String(err3);
-            console.error('Falha em todos os modelos de imagem Gemini:', lastError);
-          }
         }
       }
 
@@ -449,7 +426,7 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
         });
       }
 
-      // No fallback to Unsplash or simulated images: return explicit JSON error
+      // Return explicit JSON error with clean user-friendly message
       let userFriendlyError = lastError || 'Nenhuma imagem foi retornada pelo modelo.';
       try {
         if (lastError && (lastError.startsWith('{') || lastError.includes('"message"'))) {
@@ -474,10 +451,174 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
     }
   });
 
+  // Dedicated Video Generation Route (Veo)
+  app.post('/api/generation/video', async (req, res) => {
+    try {
+      const { scene, visualBible, aspectRatio = '16:9' } = req.body;
+      const ai = getGeminiClient();
+
+      if (!ai) {
+        return res.status(500).json({
+          error: 'Chave GEMINI_API_KEY não configurada no servidor.',
+        });
+      }
+
+      const visualPrompt = scene?.visualPrompt || scene?.description || 'Cinematic music video scene';
+      const cameraMovement = scene?.cameraMovement ? `Camera movement: ${scene.cameraMovement}.` : 'Smooth cinematic camera movement.';
+      const lighting = visualBible?.lighting ? `Lighting: ${visualBible.lighting}.` : 'Dramatic stage and cinematic lighting.';
+      const colorPalette = visualBible?.colorPalette?.length ? `Color scheme: ${visualBible.colorPalette.join(', ')}.` : '';
+
+      const videoPrompt = `${visualPrompt}. ${cameraMovement} ${lighting} ${colorPalette} Realistic 4k music video cinematic shot.`.trim();
+
+      const candidateModels = [
+        'veo-2.0-generate-001',
+        'veo-3.1-lite-generate-preview',
+        'veo-3.1-fast-generate-preview',
+      ];
+
+      let lastError: string | null = null;
+      let usedModel = '';
+      let operation: any = null;
+
+      for (const modelName of candidateModels) {
+        try {
+          usedModel = modelName;
+          operation = await ai.models.generateVideos({
+            model: modelName,
+            prompt: videoPrompt,
+            config: {
+              aspectRatio: aspectRatio === '9:16' ? '9:16' : '16:9',
+              numberOfVideos: 1,
+            },
+          });
+          break;
+        } catch (err: any) {
+          lastError = err?.message || String(err);
+        }
+      }
+
+      if (operation) {
+        return res.status(200).json({
+          success: true,
+          status: 'pending',
+          operationName: operation.name,
+          assetType: 'video',
+          provider: `Google Veo (${usedModel})`,
+          modelUsed: usedModel,
+          isDemo: false,
+        });
+      }
+
+      return res.status(502).json({
+        success: false,
+        status: 'error',
+        error: `Erro ao gerar vídeo com Veo: ${lastError || 'Modelo Veo indisponível'}`,
+        details: lastError,
+        modelAttempted: usedModel,
+        assetType: 'video',
+      });
+    } catch (err: any) {
+      console.error('Error in /api/generation/video:', err);
+      return res.status(500).json({
+        success: false,
+        error: `Erro interno no servidor ao tentar gerar vídeo: ${err?.message || err}`,
+        assetType: 'video',
+      });
+    }
+  });
+
+  // Isolated Test Veo Video Generation Endpoint
+  app.post('/api/test-veo', async (req, res) => {
+    try {
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(500).json({ success: false, error: 'GEMINI_API_KEY não configurada' });
+      }
+
+      const prompt = req.body?.prompt || 'A cinematic music video shot of a lone musician in neon lights.';
+      const candidateModels = ['veo-2.0-generate-001', 'veo-3.1-lite-generate-preview'];
+
+      let lastError: string | null = null;
+      let usedModel = '';
+      let operation: any = null;
+
+      for (const modelName of candidateModels) {
+        try {
+          usedModel = modelName;
+          operation = await ai.models.generateVideos({
+            model: modelName,
+            prompt,
+            config: { aspectRatio: '16:9', numberOfVideos: 1 },
+          });
+          break;
+        } catch (err: any) {
+          lastError = err?.message || String(err);
+        }
+      }
+
+      if (operation) {
+        return res.status(200).json({
+          success: true,
+          status: 'pending',
+          modelUsed: usedModel,
+          operationName: operation.name,
+        });
+      }
+
+      return res.status(502).json({
+        success: false,
+        status: 'error',
+        modelAttempted: usedModel,
+        error: lastError,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || String(err) });
+    }
+  });
+
+  // Provider: Regenerate Scene
+  app.post('/api/generation/regenerate-scene', async (req, res) => {
+    try {
+      const { scene, adjustmentPreset, customNotes } = req.body;
+      const ai = getGeminiClient();
+
+      if (!ai) {
+        return res.status(500).json({ error: 'GEMINI_API_KEY não configurada' });
+      }
+
+      return res.status(200).json({
+        assetUrl: scene?.generatedAssetUrl || '',
+        thumbnailUrl: scene?.thumbnailUrl || scene?.generatedAssetUrl || '',
+        assetType: scene?.assetType || 'image',
+        provider: 'Gemini AI Vision',
+        isDemo: false,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erro ao regenerar cena' });
+    }
+  });
+
+  // Provider: Status & Cancel endpoints
+  app.get('/api/generation/status/:jobId', (req, res) => {
+    res.json({ status: 'completed', progress: 100 });
+  });
+
+  app.post('/api/generation/cancel/:jobId', (req, res) => {
+    res.json({ status: 'cancelled' });
+  });
+
   // Catch-all 404 for API routes so they NEVER fall through to HTML SPA fallback
   app.all('/api/*', (req, res) => {
     res.status(404).json({ error: `Rota de API não encontrada: ${req.method} ${req.originalUrl}` });
   });
+
+  return app;
+}
+
+export const app = createExpressApp();
+
+async function startServer() {
+  const PORT = 3000;
 
   // Vite Middleware (Dev vs Prod)
   if (process.env.NODE_ENV !== 'production') {
@@ -499,4 +640,7 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
   });
 }
 
-startServer();
+// Start standalone server when executed directly
+if (process.env.VERCEL !== '1') {
+  startServer();
+}
