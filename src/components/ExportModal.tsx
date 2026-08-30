@@ -33,6 +33,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
   const [selectedDuration, setSelectedDuration] = useState<'full' | '30s' | '60s'>('full');
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [currentRenderSecs, setCurrentRenderSecs] = useState(0);
+  const [totalRenderSecs, setTotalRenderSecs] = useState(0);
   const [stageMessage, setStageMessage] = useState('');
   const [completedJob, setCompletedJob] = useState<RenderJob | null>(null);
 
@@ -40,8 +42,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
   const startRender = async () => {
     setIsRendering(true);
-    setRenderProgress(5);
-    setStageMessage('Iniciando pipeline de exportação com áudio master...');
+    setRenderProgress(0);
+    setCurrentRenderSecs(0);
+    setTotalRenderSecs(totalSongDuration);
+    setStageMessage(`Iniciando gravação do clipe (${Math.floor(totalSongDuration)}s) com áudio master...`);
 
     const durationLimit =
       selectedDuration === '30s' ? 30 : selectedDuration === '60s' ? 60 : 99999;
@@ -52,9 +56,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
         project,
         selectedPreset,
         durationLimit,
-        (prog, msg) => {
+        (prog, msg, curSec, totSec) => {
           setRenderProgress(prog);
           setStageMessage(msg);
+          if (curSec !== undefined) setCurrentRenderSecs(curSec);
+          if (totSec !== undefined) setTotalRenderSecs(totSec);
         }
       );
       setCompletedJob(job);
@@ -219,24 +225,73 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
           </div>
         )}
 
-        {/* Rendering Progress */}
+        {/* Rendering Progress Dashboard */}
         {isRendering && (
-          <div className="p-6 rounded-2xl bg-black/80 border border-violet-500/40 space-y-4 text-center">
-            <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-white">Compondo e Renderizando Videoclipe...</h4>
-              <p className="text-xs text-violet-300 font-mono">{stageMessage}</p>
+          <div className="p-6 rounded-2xl bg-black/90 border border-violet-500/50 space-y-5 text-center shadow-2xl glow-purple animate-fadeIn">
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-950 border border-violet-500/40 flex items-center justify-center text-cyan-400">
+                <RefreshCw className="w-5 h-5 animate-spin" />
+              </div>
+              <div className="text-left">
+                <h4 className="text-sm font-bold text-white">Gravando e Renderizando Videoclipe</h4>
+                <p className="text-xs text-violet-300 font-mono">{stageMessage}</p>
+              </div>
             </div>
 
-            <div className="h-3 w-full bg-zinc-900 rounded-full overflow-hidden p-0.5 border border-zinc-800">
-              <div
-                className="h-full bg-gradient-to-r from-violet-500 via-pink-500 to-cyan-400 rounded-full transition-all duration-300"
-                style={{ width: `${renderProgress}%` }}
-              />
+            {/* Live Metrics Dashboard */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-left">
+              <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Duração Total</span>
+                <p className="text-sm font-mono font-bold text-white">
+                  {Math.round(totalRenderSecs || totalSongDuration)}s
+                </p>
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  ({Math.floor((totalRenderSecs || totalSongDuration) / 60)}:{(Math.floor((totalRenderSecs || totalSongDuration) % 60)).toString().padStart(2, '0')} min)
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-violet-950/40 border border-violet-500/30">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 block">Já Concluído</span>
+                <p className="text-sm font-mono font-bold text-cyan-400">
+                  {Math.floor(currentRenderSecs)}s
+                </p>
+                <span className="text-[10px] text-violet-300 font-mono">
+                  de {Math.round(totalRenderSecs || totalSongDuration)}s
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Tempo Restante</span>
+                <p className="text-sm font-mono font-bold text-pink-400">
+                  {Math.max(0, Math.floor((totalRenderSecs || totalSongDuration) - currentRenderSecs))}s
+                </p>
+                <span className="text-[10px] text-zinc-500 font-mono">estimado</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 block">Porcentagem</span>
+                <p className="text-sm font-mono font-bold text-white">
+                  {Math.round(renderProgress)}%
+                </p>
+                <span className="text-[10px] text-cyan-400 font-mono">em tempo real</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
-              <span>⚡ Modo Ultra Rápido</span>
-              <span className="text-violet-300 font-bold">{Math.round(renderProgress)}% Concluído</span>
+
+            {/* Dynamic Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="h-4 w-full bg-zinc-900 rounded-full overflow-hidden p-0.5 border border-zinc-700 relative">
+                <div
+                  className="h-full bg-gradient-to-r from-violet-600 via-pink-500 to-cyan-400 rounded-full transition-all duration-150 relative shadow-lg"
+                  style={{ width: `${Math.max(2, Math.min(100, renderProgress))}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+                <span className="flex items-center gap-1.5 text-cyan-400 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  Gravando áudio & cenas...
+                </span>
+                <span className="text-violet-300 font-bold text-sm">{Math.round(renderProgress)}% Concluído</span>
+              </div>
             </div>
 
             <button
@@ -245,7 +300,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
                 RenderService.getInstance().cancelRender();
                 setIsRendering(false);
               }}
-              className="mt-2 text-xs text-zinc-500 hover:text-rose-400 underline transition-colors"
+              className="text-xs text-zinc-400 hover:text-rose-400 underline transition-colors"
             >
               Cancelar renderização
             </button>

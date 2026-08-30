@@ -454,7 +454,7 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
               </button>
 
               <span className="text-xs font-mono text-zinc-300 font-bold ml-2">
-                {formatTimecode(currentTime)}
+                {formatTimecode(currentTime)} / {formatTimecode(totalDuration)} ({Math.floor(currentTime)}s / {Math.floor(totalDuration)}s)
               </span>
             </div>
 

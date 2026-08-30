@@ -24,24 +24,29 @@ export class RenderService {
     project: Project,
     preset: 'youtube_1080p' | 'tiktok_9_16' | 'instagram_4_5' | 'square_1_1' = 'youtube_1080p',
     targetDurationSecs: number = 9999,
-    onProgress?: (progress: number, stageMessage: string) => void
+    onProgress?: (progress: number, stageMessage: string, currentSec?: number, totalSec?: number) => void
   ): Promise<RenderJob> {
     this.isCancelling = false;
     const jobId = `render-${project.id}-${Date.now()}`;
+
+    const totalSongDuration = Math.min(
+      targetDurationSecs,
+      project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40
+    );
 
     this.currentJob = {
       id: jobId,
       projectId: project.id,
       status: 'rendering',
       progress: 0,
-      stageMessage: 'Iniciando pipeline de renderização audiovisual com áudio master...',
+      stageMessage: `Iniciando gravação do clipe (${Math.floor(totalSongDuration)}s) com áudio master...`,
       exportPreset: preset,
     };
 
     try {
       // Step 1: Prepare assets & aspect ratio
-      this.updateProgress(5, 'Sincronizando timeline e decodificando áudio HD...', onProgress);
-      await this.sleep(300);
+      this.updateProgress(4, 'Sincronizando timeline e decodificando áudio HD...', onProgress, 0, totalSongDuration);
+      await this.sleep(200);
 
       // Determine target resolution based on preset
       const resolutions: Record<string, { w: number; h: number; aspect: AspectRatio }> = {
@@ -54,11 +59,11 @@ export class RenderService {
       const { w: width, h: height } = resolutions[preset] || resolutions.youtube_1080p;
 
       // Step 2: Load scene images / textures
-      this.updateProgress(20, 'Carregando quadros e aplicando filtros cinematográficos...', onProgress);
+      this.updateProgress(8, 'Carregando quadros e aplicando filtros cinematográficos...', onProgress, 0, totalSongDuration);
       const loadedImages = await this.preloadSceneImages(project.scenes);
 
-      // Step 3: Check if browser supports MediaRecorder for live client-side video compilation
-      this.updateProgress(30, 'Iniciando gravação do clipe com áudio e movimento...', onProgress);
+      // Step 3: Video compilation with audio and real-time progress
+      this.updateProgress(10, `Gravando vídeo HD com áudio: 0s de ${Math.floor(totalSongDuration)}s (0%)...`, onProgress, 0, totalSongDuration);
 
       const videoBlobUrl = await this.compileVideoWithCanvasRecorder(
         project,
@@ -66,12 +71,13 @@ export class RenderService {
         width,
         height,
         targetDurationSecs,
-        (prog, msg) => {
-          this.updateProgress(30 + prog * 0.68, msg, onProgress);
+        (progRatio, currentSec, totalSec, msg) => {
+          const overallProgress = Math.min(99, Math.round(10 + progRatio * 89));
+          this.updateProgress(overallProgress, msg, onProgress, currentSec, totalSec);
         }
       );
 
-      this.updateProgress(99, 'Finalizando empacotamento com trilha sonora...', onProgress);
+      this.updateProgress(100, 'Finalizando empacotamento com trilha sonora...', onProgress, totalSongDuration, totalSongDuration);
       await this.sleep(200);
 
       this.currentJob = {
@@ -85,7 +91,7 @@ export class RenderService {
       };
 
       if (onProgress) {
-        onProgress(100, 'Videoclipe pronto para download!');
+        onProgress(100, 'Videoclipe pronto para download!', totalSongDuration, totalSongDuration);
       }
 
       return this.currentJob;
@@ -128,7 +134,7 @@ export class RenderService {
     width: number,
     height: number,
     targetDuration: number,
-    onStepProgress: (prog: number, msg: string) => void
+    onStepProgress: (progRatio: number, currentSec: number, totalSec: number, msg: string) => void
   ): Promise<string> {
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -256,6 +262,7 @@ export class RenderService {
 
           const startTime = performance.now();
           let animFrameId: number;
+          let lastProgressUpdate = 0;
 
           const renderLoop = () => {
             if (this.isCancelling) {
@@ -273,14 +280,30 @@ export class RenderService {
 
             this.drawFrameAtTime(ctx, project, images, elapsedSecs, width, height);
 
-            const progress = Math.min(1, elapsedSecs / totalDuration);
-            onStepProgress(
-              progress,
-              `Gravando videoclipe com áudio & efeitos: ${Math.round(elapsedSecs)}s / ${Math.round(totalDuration)}s...`
-            );
+            const now = performance.now();
+            if (now - lastProgressUpdate > 100 || elapsedSecs >= totalDuration) {
+              lastProgressUpdate = now;
+              const progressRatio = Math.min(1, Math.max(0, elapsedSecs / totalDuration));
+              const currentSec = Math.min(elapsedSecs, totalDuration);
+              const totalSec = totalDuration;
+              const percent = Math.round(progressRatio * 100);
+
+              onStepProgress(
+                progressRatio,
+                currentSec,
+                totalSec,
+                `Gravando vídeo HD com áudio: ${Math.floor(currentSec)}s de ${Math.floor(totalSec)}s concluídos (${percent}%)`
+              );
+            }
 
             if (elapsedSecs >= totalDuration || (audioElement && audioElement.ended)) {
               cancelAnimationFrame(animFrameId);
+              onStepProgress(
+                1.0,
+                totalDuration,
+                totalDuration,
+                `Gravando vídeo HD com áudio: ${Math.floor(totalDuration)}s de ${Math.floor(totalDuration)}s concluídos (100%)`
+              );
               setTimeout(() => {
                 try {
                   recorder.stop();
@@ -301,7 +324,7 @@ export class RenderService {
         }
       });
     } else {
-      onStepProgress(1, 'Compilação concluída.');
+      onStepProgress(1, totalDuration, totalDuration, 'Compilação concluída.');
       return this.createFallbackVideoBlob(project, images, width, height);
     }
   }
@@ -552,14 +575,17 @@ export class RenderService {
   private updateProgress(
     progress: number,
     stageMessage: string,
-    onProgress?: (progress: number, stageMessage: string) => void
+    onProgress?: (progress: number, stageMessage: string, currentSec?: number, totalSec?: number) => void,
+    currentSec?: number,
+    totalSec?: number
   ) {
+    const roundedProgress = Math.min(100, Math.max(0, Math.round(progress)));
     if (this.currentJob) {
-      this.currentJob.progress = Math.round(progress);
+      this.currentJob.progress = roundedProgress;
       this.currentJob.stageMessage = stageMessage;
     }
     if (onProgress) {
-      onProgress(Math.round(progress), stageMessage);
+      onProgress(roundedProgress, stageMessage, currentSec, totalSec);
     }
   }
 
