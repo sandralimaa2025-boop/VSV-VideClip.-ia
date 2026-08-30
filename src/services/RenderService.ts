@@ -126,7 +126,7 @@ export class RenderService {
   }
 
   /**
-   * Canvas-based video renderer combining canvas captureStream and Web Audio API stream
+   * Canvas-based video renderer combining 30fps canvas captureStream and decoded Web Audio API stream
    */
   private async compileVideoWithCanvasRecorder(
     project: Project,
@@ -146,56 +146,56 @@ export class RenderService {
       targetDuration,
       project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40
     );
-    const fps = 24;
-    // Fast video compilation: 180 to 360 key animation frames across the entire song duration
-    const totalFrames = Math.max(60, Math.min(600, Math.floor(totalDuration * 2)));
 
-    // Prepare audio track using Web Audio API if available
+    // Prepare audio track using Web Audio API decodeAudioData
     let audioCtx: AudioContext | null = null;
-    let audioElement: HTMLAudioElement | null = null;
+    let audioBuffer: AudioBuffer | null = null;
     let audioDestination: MediaStreamAudioDestinationNode | null = null;
+    let bufferSource: AudioBufferSourceNode | null = null;
     let audioStreamTrack: MediaStreamTrack | null = null;
 
     if (project.audioFile?.url) {
       try {
-        const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const AudioCtxClass =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         audioCtx = new AudioCtxClass();
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
+        const resp = await fetch(project.audioFile.url);
+        const arrayBuf = await resp.arrayBuffer();
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+
         audioDestination = audioCtx.createMediaStreamDestination();
-
-        audioElement = new Audio();
-        audioElement.crossOrigin = 'anonymous';
-        audioElement.src = project.audioFile.url;
-        audioElement.volume = 1.0;
-
-        const sourceNode = audioCtx.createMediaElementSource(audioElement);
-        sourceNode.connect(audioDestination);
+        bufferSource = audioCtx.createBufferSource();
+        bufferSource.buffer = audioBuffer;
+        bufferSource.connect(audioDestination);
 
         const tracks = audioDestination.stream.getAudioTracks();
         if (tracks.length > 0) {
           audioStreamTrack = tracks[0];
         }
       } catch (e) {
-        console.warn('Web Audio stream pipeline notice', e);
+        console.warn('Web Audio stream decoding notice:', e);
       }
     }
 
-    // Capture video stream from canvas
+    // Capture continuous 30fps video stream from canvas
     let canvasStream: MediaStream | null = null;
     let videoTrack: MediaStreamTrack | null = null;
-    let canvasCaptureTrack: CanvasCaptureMediaStreamTrack | null = null;
 
     try {
       if (canvas.captureStream) {
-        // 0 fps allows manual fast frame capture on demand
-        canvasStream = canvas.captureStream(0);
+        canvasStream = canvas.captureStream(30);
         videoTrack = canvasStream.getVideoTracks()[0];
-        canvasCaptureTrack = videoTrack as CanvasCaptureMediaStreamTrack;
       }
     } catch (e) {
-      console.warn('captureStream error', e);
+      console.warn('captureStream error:', e);
     }
 
-    // Build combined stream with video and audio
+    // Build combined stream with both video and master audio
     const streamTracks: MediaStreamTrack[] = [];
     if (videoTrack) streamTracks.push(videoTrack);
     if (audioStreamTrack) streamTracks.push(audioStreamTrack);
@@ -211,7 +211,11 @@ export class RenderService {
     ];
     let supportedMime = '';
     for (const mime of mimeTypes) {
-      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mime)) {
+      if (
+        typeof MediaRecorder !== 'undefined' &&
+        MediaRecorder.isTypeSupported &&
+        MediaRecorder.isTypeSupported(mime)
+      ) {
         supportedMime = mime;
         break;
       }
@@ -224,6 +228,7 @@ export class RenderService {
           const recorder = new MediaRecorder(combinedStream, {
             mimeType: supportedMime,
             videoBitsPerSecond: 8000000,
+            audioBitsPerSecond: 192000,
           });
 
           recorder.ondataavailable = (e) => {
@@ -231,9 +236,9 @@ export class RenderService {
           };
 
           const finalizeExport = () => {
-            if (audioElement) {
+            if (bufferSource) {
               try {
-                audioElement.pause();
+                bufferSource.stop();
               } catch (e) {}
             }
             if (audioCtx) {
@@ -253,71 +258,81 @@ export class RenderService {
 
           recorder.start(100);
 
-          // Draw first frame immediately
-          this.drawFrameAtTime(ctx, project, images, 0, width, height);
-          if (canvasCaptureTrack && canvasCaptureTrack.requestFrame) {
-            canvasCaptureTrack.requestFrame();
+          // Start master audio playback into the stream
+          if (bufferSource) {
+            try {
+              bufferSource.start(0);
+            } catch (e) {
+              console.warn('Audio buffer start notice:', e);
+            }
           }
 
-          // Fast Turbo Batch Frame Processing
-          const batchSize = 6;
-          let currentFrame = 0;
+          // Initial frame
+          this.drawFrameAtTime(ctx, project, images, 0, width, height);
 
-          const processNextBatch = () => {
+          const startTime = performance.now();
+          let animFrameId: number;
+          let lastUiUpdate = 0;
+
+          const renderTick = () => {
             if (this.isCancelling) {
               try {
+                if (bufferSource) bufferSource.stop();
                 recorder.stop();
               } catch (e) {}
               resolve('');
               return;
             }
 
-            const batchEnd = Math.min(totalFrames, currentFrame + batchSize);
+            const now = performance.now();
+            const elapsedSecs = (now - startTime) / 1000;
 
-            for (let f = currentFrame; f < batchEnd; f++) {
-              const time = (f / totalFrames) * totalDuration;
-              this.drawFrameAtTime(ctx, project, images, time, width, height);
-              if (canvasCaptureTrack && canvasCaptureTrack.requestFrame) {
-                canvasCaptureTrack.requestFrame();
-              }
+            // Draw full animated scene with dynamic camera zoom, pan, lighting, and audio visualizer
+            this.drawFrameAtTime(ctx, project, images, elapsedSecs, width, height);
+
+            if (now - lastUiUpdate > 80 || elapsedSecs >= totalDuration) {
+              lastUiUpdate = now;
+              const progressRatio = Math.min(1, Math.max(0, elapsedSecs / totalDuration));
+              const currentSec = Math.min(totalDuration, elapsedSecs);
+              const percent = Math.round(progressRatio * 100);
+
+              onStepProgress(
+                progressRatio,
+                currentSec,
+                totalDuration,
+                `Gravando videoclipe HD com áudio e movimento: ${Math.floor(currentSec)}s de ${Math.floor(totalDuration)}s (${percent}%)`
+              );
             }
 
-            currentFrame = batchEnd;
-            const progressRatio = Math.min(1, currentFrame / totalFrames);
-            const currentSec = Math.min(totalDuration, progressRatio * totalDuration);
-            const percent = Math.round(progressRatio * 100);
-
-            onStepProgress(
-              progressRatio,
-              currentSec,
-              totalDuration,
-              `⚡ Modo Ultra Rápido: ${Math.floor(currentSec)}s de ${Math.floor(totalDuration)}s concluídos (${percent}%)`
-            );
-
-            if (currentFrame < totalFrames) {
-              // Yield briefly to keep UI responsive and smoothly render the live progress counters
-              setTimeout(processNextBatch, 16);
+            if (elapsedSecs < totalDuration) {
+              animFrameId = requestAnimationFrame(renderTick);
             } else {
-              // Finalize
+              cancelAnimationFrame(animFrameId);
+              onStepProgress(
+                1.0,
+                totalDuration,
+                totalDuration,
+                `Finalizando videoclipe com áudio HD: ${Math.floor(totalDuration)}s de ${Math.floor(totalDuration)}s (100%)`
+              );
               setTimeout(() => {
                 try {
+                  if (bufferSource) bufferSource.stop();
                   recorder.stop();
                 } catch (e) {
                   finalizeExport();
                 }
-              }, 200);
+              }, 250);
             }
           };
 
-          // Kick off the Turbo batch loop
-          setTimeout(processNextBatch, 20);
+          animFrameId = requestAnimationFrame(renderTick);
         } catch (err) {
-          console.warn('Recording error', err);
+          console.warn('Recording error:', err);
           resolve(this.createFallbackVideoBlob(project, images, width, height));
         }
       });
     } else {
-      onStepProgress(1, totalDuration, totalDuration, '⚡ Modo Ultra Rápido concluído.');
+      onStepProgress(1, totalDuration, totalDuration, 'Compilação concluída.');
       return this.createFallbackVideoBlob(project, images, width, height);
     }
   }
@@ -372,34 +387,34 @@ export class RenderService {
       let panY = 0;
       let rotation = 0;
 
-      // Base zoom factor from 1.05 to 1.30
+      // Base zoom factor from 1.05 to 1.35
       if (cameraType === 'zoom_in' || cameraType === 'close_up') {
-        zoom = 1.05 + sceneProgress * 0.22;
+        zoom = 1.05 + sceneProgress * 0.30;
       } else if (cameraType === 'zoom_out' || cameraType === 'wide_shot') {
-        zoom = 1.25 - sceneProgress * 0.18;
+        zoom = 1.35 - sceneProgress * 0.25;
       } else if (cameraType === 'pan_left') {
-        zoom = 1.15;
-        panX = (1 - sceneProgress * 2) * (width * 0.08);
+        zoom = 1.20;
+        panX = (0.5 - sceneProgress) * (width * 0.24);
       } else if (cameraType === 'pan_right') {
-        zoom = 1.15;
-        panX = (sceneProgress * 2 - 1) * (width * 0.08);
+        zoom = 1.20;
+        panX = (sceneProgress - 0.5) * (width * 0.24);
       } else if (cameraType === 'drone_orbit' || cameraType === 'crane_shot') {
-        zoom = 1.12 + Math.sin(sceneProgress * Math.PI) * 0.12;
-        panX = Math.cos(sceneProgress * Math.PI * 1.5) * (width * 0.06);
-        panY = Math.sin(sceneProgress * Math.PI * 1.5) * (height * 0.04);
-        rotation = Math.sin(sceneProgress * Math.PI) * 0.02;
+        zoom = 1.15 + Math.sin(sceneProgress * Math.PI) * 0.15;
+        panX = Math.cos(sceneProgress * Math.PI) * (width * 0.10);
+        panY = Math.sin(sceneProgress * Math.PI) * (height * 0.06);
+        rotation = Math.sin(sceneProgress * Math.PI) * 0.03;
       } else if (cameraType === 'dutch_angle') {
-        zoom = 1.18;
-        rotation = 0.04 - sceneProgress * 0.08;
+        zoom = 1.22;
+        rotation = 0.05 - sceneProgress * 0.10;
       } else {
-        // Handheld subtle breathing
-        zoom = 1.08 + Math.sin(currentTime * 2) * 0.04;
-        panX = Math.sin(currentTime * 3) * 8;
-        panY = Math.cos(currentTime * 2.5) * 6;
+        // Handheld subtle breathing & organic movement
+        zoom = 1.10 + Math.sin(currentTime * 2.2) * 0.05;
+        panX = Math.sin(currentTime * 3.1) * 14;
+        panY = Math.cos(currentTime * 2.4) * 10;
       }
 
       // Beat reactive bounce (rhythmic pulse)
-      const beatPulse = Math.pow(Math.sin(currentTime * 3.8), 6) * 0.03;
+      const beatPulse = Math.pow(Math.sin(currentTime * 3.8), 6) * 0.035;
       zoom += beatPulse;
 
       // Apply Matrix Transformations
@@ -469,14 +484,14 @@ export class RenderService {
     // Sweeping concert beam
     const beamAngle = Math.sin(time * 1.8) * (width * 0.4);
     const grad = ctx.createLinearGradient(width / 2, 0, width / 2 + beamAngle, height);
-    grad.addColorStop(0, 'rgba(192, 132, 252, 0.15)');
-    grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.08)');
+    grad.addColorStop(0, 'rgba(192, 132, 252, 0.18)');
+    grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.10)');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
     // Stage flare highlight on beat
-    const flareIntensity = Math.pow(Math.sin(time * 3.8), 4) * 0.25;
+    const flareIntensity = Math.pow(Math.sin(time * 3.8), 4) * 0.28;
     if (flareIntensity > 0.05) {
       const flareGrad = ctx.createRadialGradient(width * 0.5, height * 0.3, 10, width * 0.5, height * 0.3, width * 0.6);
       flareGrad.addColorStop(0, `rgba(255, 255, 255, ${flareIntensity})`);
@@ -485,6 +500,22 @@ export class RenderService {
       ctx.fillStyle = flareGrad;
       ctx.fillRect(0, 0, width, height);
     }
+
+    // Dynamic floating sparkles & atmospheric dust motes
+    const particleCount = 28;
+    for (let i = 0; i < particleCount; i++) {
+      const pTime = time * 0.8 + i * 2.3;
+      const px = ((Math.sin(pTime * 0.7 + i) * 0.5 + 0.5) * width + (time * 20 * (i % 3 === 0 ? 1 : -1))) % width;
+      const py = ((height - ((time * (35 + (i % 20))) + i * 40)) % height + height) % height;
+      const size = 1.5 + (i % 4);
+      const alpha = 0.25 + Math.sin(time * 3 + i) * 0.2;
+
+      ctx.fillStyle = i % 2 === 0 ? `rgba(236, 72, 153, ${alpha})` : `rgba(34, 211, 238, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 
