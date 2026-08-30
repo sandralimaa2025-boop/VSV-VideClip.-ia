@@ -208,9 +208,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Deseja remover a Cena ${scene.order}?`)) {
-                        onDeleteScene(scene.id);
-                      }
+                      onDeleteScene(scene.id);
                     }}
                     className="p-2 rounded-lg bg-zinc-900/80 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 border border-zinc-800 transition-colors"
                     title="Excluir cena"

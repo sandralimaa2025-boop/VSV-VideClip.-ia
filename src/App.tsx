@@ -109,8 +109,28 @@ export function App() {
     const newProj = createNewEmptyProject();
     setCurrentProject(newProj);
     setSetupSubStep('upload');
-    ProjectStorageService.saveProject(newProj);
-    setProjects(ProjectStorageService.getAllProjects());
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    ProjectStorageService.deleteProject(projectId);
+    const remaining = ProjectStorageService.getAllProjects();
+    setProjects(remaining);
+
+    if (currentProject.id === projectId) {
+      if (remaining.length > 0) {
+        const nextProject = remaining[0];
+        setCurrentProject(nextProject);
+        if (nextProject.status === 'SETUP' && nextProject.audioFile) {
+          setSetupSubStep('form');
+        } else {
+          setSetupSubStep('upload');
+        }
+      } else {
+        const newProj = createNewEmptyProject();
+        setCurrentProject(newProj);
+        setSetupSubStep('upload');
+      }
+    }
   };
 
   const handleUpdateProject = (updated: Partial<Project>) => {
@@ -634,14 +654,7 @@ export function App() {
               setSetupSubStep('form');
             }
           }}
-          onDeleteProject={(id) => {
-            ProjectStorageService.deleteProject(id);
-            const remaining = ProjectStorageService.getAllProjects();
-            setProjects(remaining);
-            if (currentProject.id === id) {
-              handleNewProject();
-            }
-          }}
+          onDeleteProject={handleDeleteProject}
           onNewProject={handleNewProject}
           onClose={() => setShowProjectsModal(false)}
         />
