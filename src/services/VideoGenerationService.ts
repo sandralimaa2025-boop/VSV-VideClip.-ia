@@ -38,7 +38,7 @@ export class VideoGenerationService {
   }
 
   /**
-   * Generates a single scene frame using Gemini AI backend
+   * Generates a single scene frame using the active provider adapter
    */
   public async generateScene(
     scene: Scene,
@@ -46,49 +46,8 @@ export class VideoGenerationService {
     masterCharacter: CharacterBible | null,
     aspectRatio: AspectRatio = '16:9'
   ): Promise<SceneGenerationResult> {
-    const response = await fetch('/api/generation/scene', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scene,
-        visualBible,
-        masterCharacter,
-        aspectRatio,
-      }),
-    });
-
-    const contentType = response.headers.get('content-type') || '';
-    let responseData: any = {};
-
-    if (contentType.includes('application/json')) {
-      responseData = await response.json().catch(() => ({}));
-    } else {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Resposta inesperada do servidor (HTTP ${response.status}): ${text.slice(0, 150) || 'Não-JSON'}`);
-    }
-
-    if (!response.ok) {
-      const message = responseData.error || responseData.details || `Falha na requisição (HTTP ${response.status})`;
-      throw new Error(message);
-    }
-
-    const data = responseData;
-    if (!data.assetUrl || typeof data.assetUrl !== 'string') {
-      throw new Error('Nenhuma imagem válida foi retornada pela API Gemini.');
-    }
-
-    return {
-      assetUrl: data.assetUrl,
-      thumbnailUrl: data.thumbnailUrl || data.assetUrl,
-      assetType: data.assetType || 'image',
-      provider: data.provider || 'Gemini AI Vision',
-      isDemo: false,
-      metadata: {
-        camera: scene.cameraMovement,
-        motionStrength: scene.motionStrength || 5,
-        generatedAt: Date.now(),
-      },
-    };
+    const provider = this.getProvider();
+    return await provider.generateScene(scene, visualBible, masterCharacter, aspectRatio);
   }
 
   /**
