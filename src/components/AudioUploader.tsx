@@ -28,24 +28,83 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (audioFile?.duration) {
-      setDuration(audioFile.duration);
+  const animRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number>(performance.now());
+
+  const fallbackAudioUrl = React.useMemo(() => {
+    try {
+      return createSynthesizedAudioDataUrl('synthwave', Math.min(60, Math.ceil(duration || audioFile?.duration || 40)));
+    } catch {
+      return '';
     }
-  }, [audioFile]);
+  }, [duration, audioFile?.duration]);
 
   // Audio Playback handler
   const togglePlay = () => {
-    if (!audioRef.current) return;
     if (isPlaying) {
-      audioRef.current.pause();
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
       setIsPlaying(false);
+      if (animRef.current) {
+        cancelAnimationFrame(animRef.current);
+        animRef.current = null;
+      }
     } else {
-      audioRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch((e) => console.warn('Playback error', e));
+      setIsPlaying(true);
+      lastTimeRef.current = performance.now();
+
+      if (audioRef.current && audioFile?.url) {
+        audioRef.current.currentTime = currentTime;
+        audioRef.current
+          .play()
+          .then(() => {
+            trackPlayback();
+          })
+          .catch((e) => {
+            console.warn('Playback error or blocked by browser, running visual timer', e);
+            trackPlayback();
+          });
+      } else {
+        trackPlayback();
+      }
     }
+  };
+
+  const trackPlayback = () => {
+    const now = performance.now();
+    const delta = (now - lastTimeRef.current) / 1000;
+    lastTimeRef.current = now;
+
+    setCurrentTime((prev) => {
+      let next = prev;
+      if (audioRef.current && !audioRef.current.paused && !isNaN(audioRef.current.currentTime)) {
+        next = audioRef.current.currentTime;
+      } else {
+        next = prev + delta;
+      }
+
+      const dur = duration || audioFile?.duration || 40;
+      if (next >= dur) {
+        setIsPlaying(false);
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+          } catch (e) {}
+        }
+        if (animRef.current) {
+          cancelAnimationFrame(animRef.current);
+          animRef.current = null;
+        }
+        return 0;
+      }
+      return next;
+    });
+
+    animRef.current = requestAnimationFrame(trackPlayback);
   };
 
   const handleTimeUpdate = () => {
@@ -60,17 +119,33 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
   const handleAudioEnded = () => {
     setIsPlaying(false);
     setCurrentTime(0);
+    if (animRef.current) {
+      cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+    }
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audioRef.current || !duration) return;
+    const dur = duration || audioFile?.duration || 40;
+    if (!dur) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const pct = Math.max(0, Math.min(1, clickX / rect.width));
-    const newTime = pct * duration;
-    audioRef.current.currentTime = newTime;
+    const newTime = pct * dur;
+    lastTimeRef.current = performance.now();
     setCurrentTime(newTime);
+    if (audioRef.current) {
+      try {
+        audioRef.current.currentTime = newTime;
+      } catch (err) {}
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, []);
 
   // Process File Upload
   const handleFile = async (file: File) => {
@@ -207,15 +282,13 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
           {audioFile && (
             <div className="bg-[#0c0c10] border border-violet-900/40 rounded-2xl p-5 space-y-4 glow-purple">
               {/* Hidden native audio element */}
-              {audioFile.url && (
-                <audio
-                  ref={audioRef}
-                  src={audioFile.url}
-                  onTimeUpdate={handleTimeUpdate}
-                  onEnded={handleAudioEnded}
-                  onLoadedMetadata={handleTimeUpdate}
-                />
-              )}
+              <audio
+                ref={audioRef}
+                src={audioFile.url || fallbackAudioUrl}
+                onTimeUpdate={handleTimeUpdate}
+                onEnded={handleAudioEnded}
+                onLoadedMetadata={handleTimeUpdate}
+              />
 
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">

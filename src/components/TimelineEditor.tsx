@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -23,6 +23,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { Project, Scene, FilterType, TransitionType } from '../types';
+import { createSynthesizedAudioDataUrl } from '../utils/sampleSongs';
 
 interface TimelineEditorProps {
   project: Project;
@@ -47,15 +48,26 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number>(performance.now());
 
   const totalDuration = project.audioFile?.duration || scenes.reduce((acc, s) => acc + s.duration, 0) || 40;
+
+  // Generate a fallback synthetic audio track if project audio has no url or is broken
+  const fallbackAudioUrl = useMemo(() => {
+    try {
+      return createSynthesizedAudioDataUrl('synthwave', Math.min(60, Math.ceil(totalDuration)));
+    } catch {
+      return '';
+    }
+  }, [totalDuration]);
 
   // Selected Scene
   const activeScene = scenes.find((s) => s.id === selectedSceneId) || scenes[0];
 
   // Find currently playing scene based on playback timestamp
   const currentPlayingScene =
-    scenes.find((s) => currentTime >= s.startTime && currentTime < s.endTime) || scenes[0];
+    scenes.find((s) => currentTime >= s.startTime && currentTime < s.endTime) ||
+    (currentTime >= totalDuration ? scenes[scenes.length - 1] : scenes[0]);
 
   // Audio Playback Synchronization
   useEffect(() => {
@@ -64,34 +76,83 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }
   }, [volume, isMuted]);
 
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    } else {
-      audioRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-          trackPlayback();
-        })
-        .catch((e) => console.warn('Audio play error', e));
-    }
+  const trackPlayback = () => {
+    const now = performance.now();
+    const delta = (now - lastTimeRef.current) / 1000;
+    lastTimeRef.current = now;
+
+    setCurrentTime((prev) => {
+      let next = prev;
+      if (audioRef.current && !audioRef.current.paused && !isNaN(audioRef.current.currentTime)) {
+        next = audioRef.current.currentTime;
+      } else {
+        next = prev + delta;
+      }
+
+      if (next >= totalDuration) {
+        setIsPlaying(false);
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+          } catch (e) {}
+        }
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        return 0;
+      }
+      return next;
+    });
+
+    animationFrameRef.current = requestAnimationFrame(trackPlayback);
   };
 
-  const trackPlayback = () => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
-      if (!audioRef.current.paused) {
-        animationFrameRef.current = requestAnimationFrame(trackPlayback);
+  const togglePlay = () => {
+    if (isPlaying) {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
+      setIsPlaying(false);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    } else {
+      setIsPlaying(true);
+      lastTimeRef.current = performance.now();
+
+      // If at end, loop back to start
+      if (currentTime >= totalDuration - 0.1) {
+        setCurrentTime(0);
+        if (audioRef.current) audioRef.current.currentTime = 0;
+      }
+
+      if (audioRef.current) {
+        try {
+          audioRef.current.currentTime = currentTime >= totalDuration - 0.1 ? 0 : currentTime;
+        } catch (e) {}
+
+        audioRef.current
+          .play()
+          .then(() => {
+            trackPlayback();
+          })
+          .catch((e) => {
+            console.warn('Audio play blocked by browser or failed, running timeline video timer', e);
+            trackPlayback();
+          });
+      } else {
+        trackPlayback();
       }
     }
   };
 
   const handleAudioTimeUpdate = () => {
-    if (audioRef.current) {
+    if (audioRef.current && isPlaying) {
       setCurrentTime(audioRef.current.currentTime);
     }
   };
@@ -100,15 +161,30 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
     setIsPlaying(false);
     setCurrentTime(0);
     if (audioRef.current) audioRef.current.currentTime = 0;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
   };
 
   const handleSeek = (timeInSecs: number) => {
     const clamped = Math.max(0, Math.min(totalDuration, timeInSecs));
+    lastTimeRef.current = performance.now();
     setCurrentTime(clamped);
     if (audioRef.current) {
-      audioRef.current.currentTime = clamped;
+      try {
+        audioRef.current.currentTime = clamped;
+      } catch (e) {}
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -157,14 +233,12 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
   return (
     <div className="w-full max-w-6xl mx-auto py-4 space-y-6 animate-fadeIn">
       {/* Hidden audio element for precise sync */}
-      {project.audioFile?.url && (
-        <audio
-          ref={audioRef}
-          src={project.audioFile.url}
-          onTimeUpdate={handleAudioTimeUpdate}
-          onEnded={handleAudioEnded}
-        />
-      )}
+      <audio
+        ref={audioRef}
+        src={project.audioFile?.url || fallbackAudioUrl}
+        onTimeUpdate={handleAudioTimeUpdate}
+        onEnded={handleAudioEnded}
+      />
 
       {/* Top Bar with Export CTA */}
       <div className="flex items-center justify-between gap-4 border-b border-zinc-800/80 pb-3">
