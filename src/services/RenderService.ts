@@ -146,9 +146,11 @@ export class RenderService {
       targetDuration,
       project.audioFile?.duration || project.scenes.reduce((acc, s) => acc + s.duration, 0) || 40
     );
-    const fps = 30;
+    const fps = 24;
+    // Fast video compilation: 180 to 360 key animation frames across the entire song duration
+    const totalFrames = Math.max(60, Math.min(600, Math.floor(totalDuration * 2)));
 
-    // Prepare audio track using Web Audio API
+    // Prepare audio track using Web Audio API if available
     let audioCtx: AudioContext | null = null;
     let audioElement: HTMLAudioElement | null = null;
     let audioDestination: MediaStreamAudioDestinationNode | null = null;
@@ -173,24 +175,27 @@ export class RenderService {
           audioStreamTrack = tracks[0];
         }
       } catch (e) {
-        console.warn('Web Audio stream pipeline error, falling back to direct recording', e);
+        console.warn('Web Audio stream pipeline notice', e);
       }
     }
 
     // Capture video stream from canvas
     let canvasStream: MediaStream | null = null;
     let videoTrack: MediaStreamTrack | null = null;
+    let canvasCaptureTrack: CanvasCaptureMediaStreamTrack | null = null;
 
     try {
       if (canvas.captureStream) {
-        canvasStream = canvas.captureStream(fps);
+        // 0 fps allows manual fast frame capture on demand
+        canvasStream = canvas.captureStream(0);
         videoTrack = canvasStream.getVideoTracks()[0];
+        canvasCaptureTrack = videoTrack as CanvasCaptureMediaStreamTrack;
       }
     } catch (e) {
-      console.warn('captureStream not available', e);
+      console.warn('captureStream error', e);
     }
 
-    // Build combined stream with both video and audio
+    // Build combined stream with video and audio
     const streamTracks: MediaStreamTrack[] = [];
     if (videoTrack) streamTracks.push(videoTrack);
     if (audioStreamTrack) streamTracks.push(audioStreamTrack);
@@ -218,8 +223,7 @@ export class RenderService {
           const recordedChunks: Blob[] = [];
           const recorder = new MediaRecorder(combinedStream, {
             mimeType: supportedMime,
-            videoBitsPerSecond: 10000000,
-            audioBitsPerSecond: 256000,
+            videoBitsPerSecond: 8000000,
           });
 
           recorder.ondataavailable = (e) => {
@@ -247,26 +251,20 @@ export class RenderService {
             resolve(this.createFallbackVideoBlob(project, images, width, height));
           };
 
-          recorder.start(250);
+          recorder.start(100);
 
-          if (audioCtx && audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
+          // Draw first frame immediately
+          this.drawFrameAtTime(ctx, project, images, 0, width, height);
+          if (canvasCaptureTrack && canvasCaptureTrack.requestFrame) {
+            canvasCaptureTrack.requestFrame();
           }
 
-          if (audioElement) {
-            audioElement.currentTime = 0;
-            audioElement.play().catch((err) => {
-              console.warn('Audio play during render blocked, continuing clock-synced', err);
-            });
-          }
+          // Fast Turbo Batch Frame Processing
+          const batchSize = 6;
+          let currentFrame = 0;
 
-          const startTime = performance.now();
-          let animFrameId: number;
-          let lastProgressUpdate = 0;
-
-          const renderLoop = () => {
+          const processNextBatch = () => {
             if (this.isCancelling) {
-              cancelAnimationFrame(animFrameId);
               try {
                 recorder.stop();
               } catch (e) {}
@@ -274,57 +272,52 @@ export class RenderService {
               return;
             }
 
-            const elapsedSecs = audioElement && !audioElement.paused
-              ? audioElement.currentTime
-              : (performance.now() - startTime) / 1000;
+            const batchEnd = Math.min(totalFrames, currentFrame + batchSize);
 
-            this.drawFrameAtTime(ctx, project, images, elapsedSecs, width, height);
-
-            const now = performance.now();
-            if (now - lastProgressUpdate > 100 || elapsedSecs >= totalDuration) {
-              lastProgressUpdate = now;
-              const progressRatio = Math.min(1, Math.max(0, elapsedSecs / totalDuration));
-              const currentSec = Math.min(elapsedSecs, totalDuration);
-              const totalSec = totalDuration;
-              const percent = Math.round(progressRatio * 100);
-
-              onStepProgress(
-                progressRatio,
-                currentSec,
-                totalSec,
-                `Gravando vídeo HD com áudio: ${Math.floor(currentSec)}s de ${Math.floor(totalSec)}s concluídos (${percent}%)`
-              );
+            for (let f = currentFrame; f < batchEnd; f++) {
+              const time = (f / totalFrames) * totalDuration;
+              this.drawFrameAtTime(ctx, project, images, time, width, height);
+              if (canvasCaptureTrack && canvasCaptureTrack.requestFrame) {
+                canvasCaptureTrack.requestFrame();
+              }
             }
 
-            if (elapsedSecs >= totalDuration || (audioElement && audioElement.ended)) {
-              cancelAnimationFrame(animFrameId);
-              onStepProgress(
-                1.0,
-                totalDuration,
-                totalDuration,
-                `Gravando vídeo HD com áudio: ${Math.floor(totalDuration)}s de ${Math.floor(totalDuration)}s concluídos (100%)`
-              );
+            currentFrame = batchEnd;
+            const progressRatio = Math.min(1, currentFrame / totalFrames);
+            const currentSec = Math.min(totalDuration, progressRatio * totalDuration);
+            const percent = Math.round(progressRatio * 100);
+
+            onStepProgress(
+              progressRatio,
+              currentSec,
+              totalDuration,
+              `⚡ Modo Ultra Rápido: ${Math.floor(currentSec)}s de ${Math.floor(totalDuration)}s concluídos (${percent}%)`
+            );
+
+            if (currentFrame < totalFrames) {
+              // Yield briefly to keep UI responsive and smoothly render the live progress counters
+              setTimeout(processNextBatch, 16);
+            } else {
+              // Finalize
               setTimeout(() => {
                 try {
                   recorder.stop();
                 } catch (e) {
                   finalizeExport();
                 }
-              }, 300);
-              return;
+              }, 200);
             }
-
-            animFrameId = requestAnimationFrame(renderLoop);
           };
 
-          animFrameId = requestAnimationFrame(renderLoop);
+          // Kick off the Turbo batch loop
+          setTimeout(processNextBatch, 20);
         } catch (err) {
           console.warn('Recording error', err);
           resolve(this.createFallbackVideoBlob(project, images, width, height));
         }
       });
     } else {
-      onStepProgress(1, totalDuration, totalDuration, 'Compilação concluída.');
+      onStepProgress(1, totalDuration, totalDuration, '⚡ Modo Ultra Rápido concluído.');
       return this.createFallbackVideoBlob(project, images, width, height);
     }
   }

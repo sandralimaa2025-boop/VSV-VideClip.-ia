@@ -139,13 +139,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-950/80 border border-violet-500/40 text-violet-300 text-xs font-bold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            Exportação Final & Masterização
+            ⚡ Modo Ultra Rápido (Turbo) • Exportação Audiovisual
           </div>
           <h2 className="text-2xl font-black font-heading text-white">
             Exportar Videoclipe
           </h2>
           <p className="text-xs text-zinc-400">
-            {project.name} • {project.scenes.length} cenas • {project.audioFile?.duration || 40}s
+            {project.name} • {project.scenes.length} cenas • {Math.round(totalSongDuration)}s de áudio original
           </p>
         </div>
 
@@ -332,10 +332,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
         {!isRendering && !completedJob && (
           <button
             onClick={startRender}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-black font-heading text-sm flex items-center justify-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02]"
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-violet-600 via-pink-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-black font-heading text-sm flex items-center justify-center gap-2 shadow-xl shadow-violet-950/70 transition-all hover:scale-[1.02] cursor-pointer"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>RENDERIZAR AGORA</span>
+            <Sparkles className="w-5 h-5 text-cyan-200" />
+            <span>⚡ RENDERIZAR AGORA (MODO ULTRA RÁPIDO)</span>
           </button>
         )}
 
