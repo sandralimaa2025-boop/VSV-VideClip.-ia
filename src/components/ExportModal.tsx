@@ -181,7 +181,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
                 style={{ width: `${renderProgress}%` }}
               />
             </div>
-            <span className="text-xs font-mono text-zinc-400">{Math.round(renderProgress)}% Concluído</span>
+            <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+              <span>⚡ Modo Ultra Rápido</span>
+              <span className="text-violet-300 font-bold">{Math.round(renderProgress)}% Concluído</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                RenderService.getInstance().cancelRender();
+                setIsRendering(false);
+              }}
+              className="mt-2 text-xs text-zinc-500 hover:text-rose-400 underline transition-colors"
+            >
+              Cancelar renderização
+            </button>
           </div>
         )}
 
