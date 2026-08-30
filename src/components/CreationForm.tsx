@@ -202,11 +202,32 @@ export const CreationForm: React.FC<CreationFormProps> = ({
               </div>
             </div>
 
-            {/* Lyrics */}
+            {/* Audio Master Track Confirmation */}
+            {project.audioFile && (
+              <div className="p-4 rounded-xl bg-violet-950/40 border border-violet-500/40 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                    🎵
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 block">Áudio Master Gravado</span>
+                    <p className="text-sm font-bold text-white truncate max-w-sm">{project.audioFile.name}</p>
+                    <p className="text-xs text-zinc-400">Este arquivo de áudio será a trilha sonora oficial tocada no videoclipe final.</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-mono text-violet-300 font-bold bg-violet-900/60 px-2.5 py-1 rounded-lg border border-violet-500/30">
+                    {Math.floor(project.audioFile.duration / 60)}:{(Math.floor(project.audioFile.duration % 60)).toString().padStart(2, '0')}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Lyrics (Optional) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                  Letra da Música
+                  Letra da Música <span className="text-zinc-500 font-normal lowercase">(opcional - apenas para legendas no clipe)</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
                   <input
@@ -215,16 +236,16 @@ export const CreationForm: React.FC<CreationFormProps> = ({
                     onChange={(e) => onUpdateProject({ hasLyrics: !e.target.checked })}
                     className="rounded border-zinc-700 text-violet-600 focus:ring-violet-500 bg-zinc-900"
                   />
-                  <span>Não tenho a letra (música instrumental ou análise sonora)</span>
+                  <span>Não preciso de letra (usar apenas a música gravada)</span>
                 </label>
               </div>
 
               {project.hasLyrics && (
                 <textarea
-                  rows={6}
+                  rows={5}
                   value={project.lyrics}
                   onChange={(e) => onUpdateProject({ lyrics: e.target.value })}
-                  placeholder="Cole aqui a letra da música..."
+                  placeholder="Se desejar que apareçam legendas sincronizadas no clipe, cole a letra aqui. Se não, pode deixar em branco ou desmarcar a opção acima..."
                   className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-zinc-800 focus:border-violet-500 focus:outline-none text-white text-sm font-mono leading-relaxed transition-colors"
                 />
               )}
