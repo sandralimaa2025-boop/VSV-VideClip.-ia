@@ -334,7 +334,7 @@ Retorne um JSON com a cena atualizada preservando id, startTime, endTime, durati
     }
   });
 
-  // Single Scene Visual Generation via Gemini (Imagen 3 / Gemini Image / Veo)
+  // Single Scene Visual Generation via Gemini (Nano Banana / Imagen 3 / Gemini Image)
   app.post('/api/generation/scene', async (req, res) => {
     try {
       const { scene, visualBible, masterCharacter, aspectRatio = '16:9' } = req.body;
@@ -358,34 +358,43 @@ Lighting: ${scene.lighting || visualBible?.lighting || 'Dramatic cinematic light
 Visual Style: ${visualBible?.style || 'Cinematic film, anamorphic lens flare, 8k masterpiece'}
 Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmospheric'}`;
 
-      const formattedRatio = aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : aspectRatio === '4:5' ? '3:4' : '16:9';
+      const formattedRatio: '16:9' | '9:16' | '1:1' | '3:4' | '4:3' =
+        aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : aspectRatio === '4:5' ? '3:4' : '16:9';
 
       let lastError: string | null = null;
       let assetUrl: string | null = null;
       let usedModel = '';
 
-      // 1. Try Imagen 3 via generateImages
+      // 1. Try gemini-3.1-flash-lite-image
       try {
-        usedModel = 'imagen-3.0-generate-002';
-        const imgRes = await ai.models.generateImages({
+        usedModel = 'gemini-3.1-flash-lite-image';
+        const response = await ai.models.generateContent({
           model: usedModel,
-          prompt,
+          contents: {
+            parts: [{ text: prompt }],
+          },
           config: {
-            numberOfImages: 1,
-            aspectRatio: (aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : '16:9') as any,
-            outputMimeType: 'image/jpeg',
+            imageConfig: {
+              aspectRatio: formattedRatio,
+            },
           },
         });
 
-        if (imgRes.generatedImages && imgRes.generatedImages.length > 0) {
-          const b64 = imgRes.generatedImages[0].image?.imageBytes;
-          if (b64) {
-            assetUrl = `data:image/jpeg;base64,${b64}`;
+        const candidates = response.candidates || [];
+        for (const candidate of candidates) {
+          const parts = candidate.content?.parts || [];
+          for (const part of parts) {
+            if (part.inlineData && part.inlineData.data) {
+              const mimeType = part.inlineData.mimeType || 'image/jpeg';
+              assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+              break;
+            }
           }
+          if (assetUrl) break;
         }
       } catch (err1: any) {
         lastError = err1?.message || String(err1);
-        console.warn('Tentativa com imagen-3.0-generate-002 falhou:', lastError);
+        console.warn('Tentativa com gemini-3.1-flash-lite-image falhou:', lastError);
 
         // 2. Try gemini-3.1-flash-image
         try {
@@ -395,6 +404,11 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
             contents: {
               parts: [{ text: prompt }],
             },
+            config: {
+              imageConfig: {
+                aspectRatio: formattedRatio,
+              },
+            },
           });
 
           const candidates = response.candidates || [];
@@ -402,7 +416,7 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
             const parts = candidate.content?.parts || [];
             for (const part of parts) {
               if (part.inlineData && part.inlineData.data) {
-                const mimeType = part.inlineData.mimeType || 'image/png';
+                const mimeType = part.inlineData.mimeType || 'image/jpeg';
                 assetUrl = `data:${mimeType};base64,${part.inlineData.data}`;
                 break;
               }
@@ -412,6 +426,30 @@ Atmosphere: ${visualBible?.atmosphere || 'Moody, emotional, high-contrast, atmos
         } catch (err2: any) {
           lastError = err2?.message || String(err2);
           console.warn('Tentativa com gemini-3.1-flash-image falhou:', lastError);
+
+          // 3. Try Imagen 3 via generateImages
+          try {
+            usedModel = 'imagen-3.0-generate-002';
+            const imgRes = await ai.models.generateImages({
+              model: usedModel,
+              prompt,
+              config: {
+                numberOfImages: 1,
+                aspectRatio: (aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : '16:9') as any,
+                outputMimeType: 'image/jpeg',
+              },
+            });
+
+            if (imgRes.generatedImages && imgRes.generatedImages.length > 0) {
+              const b64 = imgRes.generatedImages[0].image?.imageBytes;
+              if (b64) {
+                assetUrl = `data:image/jpeg;base64,${b64}`;
+              }
+            }
+          } catch (err3: any) {
+            lastError = err3?.message || String(err3);
+            console.warn('Tentativa com imagen-3.0-generate-002 falhou:', lastError);
+          }
         }
       }
 

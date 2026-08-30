@@ -148,7 +148,80 @@ export class DemoVideoProviderAdapter implements IVideoProviderAdapter {
   }
 
   /**
-   * Generates a realistic, visually stunning cinematic poster/frame on an HTML5 canvas
+   * Generates a realistic, high-resolution cinematic music video photograph/frame
+   */
+  private getCinematicPhotoForScene(scene: Scene, visualBible: VisualBible | null): string {
+    const textLower = `${scene.description} ${scene.setting} ${scene.lighting} ${scene.visualPrompt || ''} ${scene.emotionalGoal} ${scene.musicSection} ${visualBible?.style || ''} ${visualBible?.atmosphere || ''}`.toLowerCase();
+
+    // High quality curated cinematic Unsplash music video stills (1080p+ widescreen)
+    const library: { keywords: string[]; urls: string[] } = {
+      keywords: [],
+      urls: [],
+    };
+
+    const bordeauxOrRed = [
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop', // Red laser stage concert
+      'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1600&auto=format&fit=crop', // Deep red ambient party/music club
+      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=1600&auto=format&fit=crop', // Dramatic red backlight crowd & artist
+      'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=1600&auto=format&fit=crop', // Bordeaux neon club singer
+    ];
+
+    const stageOrConcert = [
+      'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=1600&auto=format&fit=crop', // Massive stage festival DJ/electronic
+      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1600&auto=format&fit=crop', // Volumetric beams stage singer
+      'https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?q=80&w=1600&auto=format&fit=crop', // Concert crowd with warm haze
+      'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1600&auto=format&fit=crop', // Live stage with spotlights
+      'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1600&auto=format&fit=crop', // Vocalist performance with microphone
+    ];
+
+    const singerOrVocalist = [
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop', // Vintage studio microphone & singer moody
+      'https://images.unsplash.com/photo-1520523839898-5071228bf581?q=80&w=1600&auto=format&fit=crop', // Singer close up with dramatic blue & purple light
+      'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=1600&auto=format&fit=crop', // Artist performing in neon fog
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop', // Dramatic spotlight singer
+    ];
+
+    const cyberpunkOrNeon = [
+      'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1600&auto=format&fit=crop', // Neon rainy street cinematic
+      'https://images.unsplash.com/photo-1519501025264-65ba15a82390?q=80&w=1600&auto=format&fit=crop', // Cyberpunk city night skyline
+      'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1600&auto=format&fit=crop', // Futuristic neon glow silhouette
+      'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1600&auto=format&fit=crop', // Neon haze tunnel
+    ];
+
+    const sunsetOrAcoustic = [
+      'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?q=80&w=1600&auto=format&fit=crop', // Acoustic artist golden hour
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop', // Ocean sunset cinematic wide
+      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=1600&auto=format&fit=crop', // Mountain road golden hour
+      'https://images.unsplash.com/photo-1510915361894-db8b60106cb1?q=80&w=1600&auto=format&fit=crop', // Guitar player in nature
+    ];
+
+    const darkStudioOrNoir = [
+      'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1600&auto=format&fit=crop', // Music production studio mixing console
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop', // Noir microphone in shadow
+      'https://images.unsplash.com/photo-1445985543468-3940bc9c81ad?q=80&w=1600&auto=format&fit=crop', // Piano keys dramatic shadow
+      'https://images.unsplash.com/photo-1514306191717-452ec28c7814?q=80&w=1600&auto=format&fit=crop', // Dramatic spotlight on instrument
+    ];
+
+    let pool = stageOrConcert;
+
+    if (textLower.includes('bordô') || textLower.includes('bordeaux') || textLower.includes('vermelho') || textLower.includes('red')) {
+      pool = bordeauxOrRed;
+    } else if (textLower.includes('cantor') || textLower.includes('vocal') || textLower.includes('microfone') || textLower.includes('close') || textLower.includes('rosto') || textLower.includes('voz')) {
+      pool = singerOrVocalist;
+    } else if (textLower.includes('neon') || textLower.includes('cyber') || textLower.includes('futurista') || textLower.includes('cidade') || textLower.includes('noite')) {
+      pool = cyberpunkOrNeon;
+    } else if (textLower.includes('acústico') || textLower.includes('sol') || textLower.includes('praia') || textLower.includes('estrada') || textLower.includes('golden') || textLower.includes('violão')) {
+      pool = sunsetOrAcoustic;
+    } else if (textLower.includes('estúdio') || textLower.includes('piano') || textLower.includes('sombra') || textLower.includes('noir') || textLower.includes('preto e branco')) {
+      pool = darkStudioOrNoir;
+    }
+
+    const index = Math.abs(scene.order - 1) % pool.length;
+    return pool[index];
+  }
+
+  /**
+   * Generates a realistic, visually stunning cinematic poster/frame
    */
   private renderProceduralSceneFrame(
     scene: Scene,
@@ -157,253 +230,7 @@ export class DemoVideoProviderAdapter implements IVideoProviderAdapter {
     aspectRatio: AspectRatio,
     adjustment?: string
   ): string {
-    const canvas = document.createElement('canvas');
-    const width = 1280;
-    const height =
-      aspectRatio === '9:16' ? 2275 : aspectRatio === '4:5' ? 1600 : aspectRatio === '1:1' ? 1280 : 720;
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-
-    // Determine visual genre theme from scene and description
-    const textLower = `${scene.description} ${scene.setting} ${scene.lighting} ${scene.musicSection} ${visualBible?.style || ''} ${visualBible?.atmosphere || ''}`.toLowerCase();
-
-    const isStageOrLive = textLower.includes('show') || textLower.includes('palco') || textLower.includes('palco') || textLower.includes('banda') || textLower.includes('cantor') || textLower.includes('microfone') || textLower.includes('luzes') || textLower.includes('show');
-    const isCyberpunkOrNeon = textLower.includes('neon') || textLower.includes('cyber') || textLower.includes('cidade') || textLower.includes('noite') || textLower.includes('chuva') || textLower.includes('futurista');
-    const isSunsetOrNature = textLower.includes('sol') || textLower.includes('praia') || textLower.includes('estrada') || textLower.includes('campo') || textLower.includes('golden') || textLower.includes('dia') || textLower.includes('montanha');
-
-    // 1. Base Sky / Environment Gradient
-    let skyColors = ['#080811', '#1e1b4b', '#4338ca'];
-    if (isCyberpunkOrNeon) {
-      skyColors = ['#05050d', '#1e0538', '#06b6d4'];
-    } else if (isSunsetOrNature) {
-      skyColors = ['#1e102d', '#7c2d12', '#f59e0b'];
-    } else if (isStageOrLive) {
-      skyColors = ['#030712', '#111827', '#4c1d95'];
-    } else {
-      const presets = [
-        ['#09090b', '#1e1b4b', '#3b82f6'],
-        ['#0a0a0f', '#2e1065', '#ec4899'],
-        ['#022c22', '#064e3b', '#10b981'],
-        ['#1c1917', '#451a03', '#d97706'],
-      ];
-      skyColors = presets[(scene.order - 1) % presets.length];
-    }
-
-    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-    bgGrad.addColorStop(0, skyColors[0]);
-    bgGrad.addColorStop(0.55, skyColors[1]);
-    bgGrad.addColorStop(1, skyColors[2]);
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 2. Distant Stars or City Skyline
-    if (isCyberpunkOrNeon || !isSunsetOrNature) {
-      // Distant City Skyline Silhouettes
-      ctx.fillStyle = '#050714';
-      const buildingCount = 20;
-      const bWidth = width / buildingCount;
-      for (let i = 0; i < buildingCount; i++) {
-        const bHeight = 80 + Math.sin(i * 1.5 + scene.order) * 70 + (i % 3) * 40;
-        ctx.fillRect(i * bWidth, height * 0.65 - bHeight, bWidth + 2, height * 0.35 + bHeight);
-        
-        // Random glowing window pixels
-        ctx.fillStyle = (i % 2 === 0) ? 'rgba(56, 189, 248, 0.4)' : 'rgba(244, 114, 182, 0.4)';
-        for (let w = 0; w < 4; w++) {
-          for (let h = 0; h < 6; h++) {
-            if ((i + w + h) % 3 === 0) {
-              ctx.fillRect(i * bWidth + 8 + w * 10, height * 0.65 - bHeight + 15 + h * 16, 4, 6);
-            }
-          }
-        }
-        ctx.fillStyle = '#050714';
-      }
-    } else {
-      // Golden Hour Mountain Ranges
-      ctx.fillStyle = 'rgba(30, 15, 20, 0.7)';
-      ctx.beginPath();
-      ctx.moveTo(0, height * 0.65);
-      ctx.lineTo(width * 0.25, height * 0.52);
-      ctx.lineTo(width * 0.5, height * 0.62);
-      ctx.lineTo(width * 0.75, height * 0.48);
-      ctx.lineTo(width, height * 0.65);
-      ctx.lineTo(width, height);
-      ctx.lineTo(0, height);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 3. Ground / Floor / Stage Surface with Reflective Gradient
-    const groundGrad = ctx.createLinearGradient(0, height * 0.65, 0, height);
-    groundGrad.addColorStop(0, 'rgba(10, 10, 18, 0.95)');
-    groundGrad.addColorStop(0.3, 'rgba(15, 15, 28, 1)');
-    groundGrad.addColorStop(1, 'rgba(5, 5, 10, 1)');
-    ctx.fillStyle = groundGrad;
-    ctx.fillRect(0, height * 0.65, width, height * 0.35);
-
-    // Ground Neon Reflection Lines (Perspective Grid)
-    ctx.strokeStyle = isCyberpunkOrNeon ? 'rgba(6, 182, 212, 0.2)' : 'rgba(168, 85, 247, 0.15)';
-    ctx.lineWidth = 1.5;
-    for (let x = 0; x <= width; x += width / 8) {
-      ctx.beginPath();
-      ctx.moveTo(width / 2, height * 0.65);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-
-    // 4. Volumetric Stage Spotlights & Light Cones
-    const spotX1 = width * 0.25;
-    const spotX2 = width * 0.75;
-    const spotTargetX = width * 0.5;
-    const spotTargetY = height * 0.75;
-
-    // Left Spotlight Cone
-    const cone1 = ctx.createLinearGradient(spotX1, 0, spotTargetX, spotTargetY);
-    cone1.addColorStop(0, isCyberpunkOrNeon ? 'rgba(236, 72, 153, 0.6)' : 'rgba(56, 189, 248, 0.55)');
-    cone1.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = cone1;
-    ctx.beginPath();
-    ctx.moveTo(spotX1 - 30, 0);
-    ctx.lineTo(spotX1 + 30, 0);
-    ctx.lineTo(spotTargetX + 120, spotTargetY);
-    ctx.lineTo(spotTargetX - 120, spotTargetY);
-    ctx.closePath();
-    ctx.fill();
-
-    // Right Spotlight Cone
-    const cone2 = ctx.createLinearGradient(spotX2, 0, spotTargetX, spotTargetY);
-    cone2.addColorStop(0, isCyberpunkOrNeon ? 'rgba(6, 182, 212, 0.6)' : 'rgba(217, 70, 239, 0.55)');
-    cone2.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = cone2;
-    ctx.beginPath();
-    ctx.moveTo(spotX2 - 30, 0);
-    ctx.lineTo(spotX2 + 30, 0);
-    ctx.lineTo(spotTargetX + 140, spotTargetY);
-    ctx.lineTo(spotTargetX - 100, spotTargetY);
-    ctx.closePath();
-    ctx.fill();
-
-    // 5. Center Spotlight Stage Glow & Atmospheric Fog
-    const stageGlow = ctx.createRadialGradient(width / 2, height * 0.75, 20, width / 2, height * 0.75, width * 0.45);
-    stageGlow.addColorStop(0, isSunsetOrNature ? 'rgba(245, 158, 11, 0.4)' : 'rgba(168, 85, 247, 0.35)');
-    stageGlow.addColorStop(0.5, 'rgba(56, 189, 248, 0.15)');
-    stageGlow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = stageGlow;
-    ctx.fillRect(0, 0, width, height);
-
-    // 6. Character / Artist Silhouette (Cinematic Subject)
-    const charX = width / 2;
-    const charY = height * 0.75;
-
-    // Rim light on character
-    ctx.strokeStyle = isCyberpunkOrNeon ? '#38bdf8' : '#e879f9';
-    ctx.lineWidth = 3;
-    ctx.shadowColor = isCyberpunkOrNeon ? '#38bdf8' : '#c084fc';
-    ctx.shadowBlur = 18;
-
-    // Head
-    ctx.fillStyle = '#090910';
-    ctx.beginPath();
-    ctx.arc(charX, charY - 140, 26, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Body / Torso Silhouette
-    ctx.beginPath();
-    ctx.moveTo(charX - 35, charY - 105);
-    ctx.lineTo(charX + 35, charY - 105);
-    ctx.lineTo(charX + 45, charY - 10);
-    ctx.lineTo(charX - 45, charY - 10);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Arms & Microphone / Performance Pose
-    ctx.beginPath();
-    ctx.moveTo(charX + 30, charY - 95);
-    ctx.lineTo(charX + 60, charY - 60);
-    ctx.lineTo(charX + 15, charY - 130); // Hand holding mic to mouth
-    ctx.stroke();
-
-    // Microphone Stand
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(charX + 15, charY - 130);
-    ctx.lineTo(charX + 18, charY + 20);
-    ctx.lineTo(charX - 10, charY + 30);
-    ctx.moveTo(charX + 18, charY + 20);
-    ctx.lineTo(charX + 45, charY + 30);
-    ctx.stroke();
-
-    // 7. Horizontal Anamorphic Lens Flare Across Cinema Center
-    const flareY = height * 0.48;
-    const flare = ctx.createLinearGradient(0, flareY, width, flareY);
-    flare.addColorStop(0, 'rgba(56, 189, 248, 0)');
-    flare.addColorStop(0.3, 'rgba(56, 189, 248, 0.25)');
-    flare.addColorStop(0.5, 'rgba(255, 255, 255, 0.9)');
-    flare.addColorStop(0.7, 'rgba(236, 72, 153, 0.3)');
-    flare.addColorStop(1, 'rgba(236, 72, 153, 0)');
-    ctx.fillStyle = flare;
-    ctx.fillRect(0, flareY - 3, width, 6);
-
-    // 8. Atmospheric Floating Light Bokeh Particles
-    for (let p = 0; p < 24; p++) {
-      const px = (p * 57 + scene.order * 31) % width;
-      const py = (p * 43 + scene.order * 23) % (height * 0.85);
-      const pr = 2 + (p % 4);
-      ctx.fillStyle = p % 2 === 0 ? 'rgba(255, 255, 255, 0.6)' : 'rgba(56, 189, 248, 0.5)';
-      ctx.beginPath();
-      ctx.arc(px, py, pr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 9. Vignette (Cinematic Edge Darkening)
-    const vignette = ctx.createRadialGradient(width / 2, height / 2, width * 0.25, width / 2, height / 2, width * 0.68);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(0.8, 'rgba(0,0,0,0.4)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.85)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, width, height);
-
-    // 10. Clean, Crisp Camera HUD Badges in Corners (Non-Intrusive)
-    // Top Left: Recording Badge
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath();
-    ctx.arc(38, 38, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px "Space Grotesk", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`REC  •  4K 24FPS  •  ${scene.musicSection.toUpperCase()}`, 52, 42);
-
-    // Top Right: Scene & Lens Details
-    ctx.fillStyle = '#38bdf8';
-    ctx.textAlign = 'right';
-    ctx.font = '12px "Space Grotesk", sans-serif';
-    ctx.fillText(`CENA ${scene.order.toString().padStart(2, '0')}  |  ${scene.cameraMovement}`, width - 30, 42);
-
-    // Bottom subtle overlay label
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-    ctx.fillRect(30, height - 55, width - 60, 36);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(30, height - 55, width - 60, 36);
-
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`🎬  ${scene.characterAction || scene.description}`, 45, height - 32);
-
-    ctx.fillStyle = '#a855f7';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${scene.duration}s  |  Lente: ${scene.lens || '35mm Anamorphic'}`, width - 45, height - 32);
-
-    return canvas.toDataURL('image/jpeg', 0.9);
+    return this.getCinematicPhotoForScene(scene, visualBible);
   }
 }
 
